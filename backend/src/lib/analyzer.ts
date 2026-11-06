@@ -65,9 +65,26 @@ const verifySchema = z.object({
   summary: z.string(),
 });
 
-export type VerifyResult = { passed: boolean; items: CheckItem[]; summary: string };
+export type VerifyResult = { passed: boolean; checklistRate: number; thresholdPct: number; items: CheckItem[]; summary: string };
 
-export async function verify(input: { requirements: string; checks: string[]; files: Files }): Promise<VerifyResult> {
+/**
+ * PASS needs both: every requested hard check passes, and the share of requirement criteria met reaches the threshold
+ * the Solidity agent designed for this task (100% for risky jobs, lower for low-risk ones).
+ */
+export function decideVerdict(items: CheckItem[], thresholdPct: number) {
+  const criteria = items.filter((i) => i.kind === 'criterion');
+  const failedChecks = items.filter((i) => i.kind === 'check' && !i.passed).map((i) => i.name);
+  const criteriaPassed = criteria.filter((i) => i.passed).length;
+  const rate = criteria.length ? (criteriaPassed / criteria.length) * 100 : 0;
+  const checklistRate = Math.round(rate * 10) / 10;
+  return {
+    passed: criteria.length > 0 && checklistRate >= thresholdPct && failedChecks.length === 0,
+    checklistRate, criteriaPassed, criteriaTotal: criteria.length, failedChecks,
+  };
+}
+
+export async function verify(input: { requirements: string; checks: string[]; files: Files; passThresholdPct?: number }): Promise<VerifyResult> {
+  const thresholdPct = input.passThresholdPct ?? 100;
   const ai = await askJson(
     `You verify delivered work against a client's requirement for an automated marketplace. ${DATA_RULE}
 Step 1: turn the requirement into 3-8 concrete, checkable acceptance criteria.
@@ -78,10 +95,16 @@ Return JSON: {"checklist":[{"criterion":string,"passed":boolean,"detail":string}
     verifySchema,
   );
 
-  const items: CheckItem[] = ai.checklist.map((c) => ({ name: c.criterion, passed: c.passed, detail: c.detail }));
-  items.push(...runMechanicalChecks(input.checks, input.files));
+  const items: CheckItem[] = [
+    ...ai.checklist.map((c) => ({ name: c.criterion, passed: c.passed, detail: c.detail, kind: 'criterion' as const })),
+    ...runMechanicalChecks(input.checks, input.files).map((c) => ({ ...c, kind: 'check' as const })),
+  ];
   if (input.checks.includes('security_review')) {
-    items.push({ name: 'security_review', passed: ai.securityReview.passed, detail: ai.securityReview.detail });
+    items.push({ name: 'security_review', passed: ai.securityReview.passed, detail: ai.securityReview.detail, kind: 'check' });
   }
-  return { passed: items.every((i) => i.passed), items, summary: ai.summary };
+
+  const d = decideVerdict(items, thresholdPct);
+  const checksNote = d.failedChecks.length ? `Failed checks: ${d.failedChecks.join(', ')}.` : input.checks.length ? 'All requested checks passed.' : '';
+  const summary = `Requirement checklist ${d.criteriaPassed}/${d.criteriaTotal} (${d.checklistRate}%), required ${thresholdPct}%. ${checksNote} ${ai.summary}`.replace(/\s+/g, ' ').trim();
+  return { passed: d.passed, checklistRate: d.checklistRate, thresholdPct, items, summary };
 }

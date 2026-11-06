@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent, requireUser, sha256 } from '../lib/auth.js';
@@ -10,6 +10,13 @@ import { verify } from '../lib/analyzer.js';
 import { uploadJson } from '../lib/zerog.js';
 
 const idParam = z.object({ id: z.string().uuid() });
+
+/** The root contract spec the Solidity agent designed for an agreement (checks + pass threshold), if any. */
+async function designedTerms(agreementId: string) {
+  const [row] = await db.select().from(schema.contractSpecs)
+    .where(and(eq(schema.contractSpecs.agreementId, agreementId), eq(schema.contractSpecs.kind, 'root'))).limit(1);
+  return row ? (row.spec as { checks: string[]; passThresholdPct: number }) : null;
+}
 
 /** Runs verification for a submitted agreement. Infra errors store an ERROR result and allow a retry; they never FAIL the work. */
 export async function runVerification(agreementId: string) {
@@ -26,7 +33,15 @@ export async function runVerification(agreementId: string) {
     await ensureSubmittedOnChain(agreementId);
 
     const files = submission.kind === 'repo' ? (await fetchRepo(submission.content)).files : { 'submission.txt': submission.content };
-    const result = await verify({ requirements: request.requirements, checks: request.checksRequested, files });
+    // The terms the Solidity agent designed for this task decide what is checked and how strict the verdict is.
+    // (They already include the checks the client asked for.) Older agreements without terms use the request as before.
+    const spec = await designedTerms(agreementId);
+    const result = await verify({
+      requirements: request.requirements,
+      checks: spec ? spec.checks : request.checksRequested,
+      files,
+      passThresholdPct: spec?.passThresholdPct,
+    });
 
     let reportRoot: string | null = null;
     try {
@@ -100,8 +115,10 @@ export async function jobRoutes(app: FastifyInstance) {
     if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
     const runs = await db.select().from(schema.verifications).where(eq(schema.verifications.agreementId, id)).orderBy(desc(schema.verifications.createdAt));
     const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
+    const terms = await designedTerms(id);
     return {
       status: agreement.status,
+      terms: terms ? { passThresholdPct: terms.passThresholdPct, checks: terms.checks } : null,
       latest: runs[0] ?? null,
       history: runs,
       verdict: verdict ?? null,
