@@ -26,6 +26,9 @@ function walletMessage(e: unknown): string {
   return err?.shortMessage ?? err?.message ?? "Wallet error";
 }
 
+const noopSubscribe = () => () => undefined;
+const hasInjectedWallet = () => typeof window !== "undefined" && "ethereum" in window;
+
 export function useWallet() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -37,7 +40,8 @@ export function useWallet() {
   const [error, setError] = useState<{ step: "connect" | "network" | "sign"; message: string } | null>(null);
   const [busy, setBusy] = useState<"connect" | "network" | "sign" | null>(null);
 
-  const hasWallet = typeof window !== "undefined" && "ethereum" in window;
+  // Server snapshot is false so the first client render matches the server HTML; real value applies after hydration.
+  const hasWallet = useSyncExternalStore(noopSubscribe, hasInjectedWallet, () => false);
   const onHedera = isConnected && chainId === hederaTestnet.id;
   const [sessionAddress, setSessionAddress] = useState<string | null>(null);
   const signedIn = Boolean(token);

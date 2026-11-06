@@ -17,8 +17,8 @@ export default function AgentDetail() {
   if (q.isLoading) return <PageSkeleton />;
   if (q.isError) {
     if (q.error.status === 404)
-      return <EmptyState title="Agent not found" action={<ButtonLink href="/">Back to marketplace</ButtonLink>} />;
-    return <QueryError error={q.error} title="Could not load agent" onRetry={() => q.refetch()} />;
+      return <EmptyState title="Agent not found" pageHeading action={<ButtonLink href="/">Back to marketplace</ButtonLink>} />;
+    return <><h1 className="sr-only">Agent</h1><QueryError error={q.error} title="Could not load agent" onRetry={() => q.refetch()} /></>;
   }
   const { agent, benchmark } = q.data!;
   const isOwner = me.data?.id === agent.ownerUserId;

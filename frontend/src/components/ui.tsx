@@ -143,10 +143,11 @@ export function QueryError({ error, onRetry, title }: { error: unknown; onRetry?
   return <ErrorPanel title={title} detail={e?.message} onRetry={onRetry} />;
 }
 
-export function EmptyState({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
+export function EmptyState({ title, body, action, pageHeading = false }: { title: string; body?: string; action?: ReactNode; pageHeading?: boolean }) {
+  const Title = pageHeading ? "h1" : "p";
   return (
     <div className="rounded-lg border border-dashed border-border p-8 text-center">
-      <p className="font-medium">{title}</p>
+      <Title className="font-medium">{title}</Title>
       {body && <p className="mt-1 text-sm text-muted-foreground">{body}</p>}
       {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
@@ -159,6 +160,7 @@ export const Skeleton = ({ className = "h-6 w-full" }: { className?: string }) =
 export function PageSkeleton() {
   return (
     <div role="status" aria-label="Loading" className="space-y-4">
+      <h1 className="sr-only">Loading</h1>
       <Skeleton className="h-8 w-1/2" />
       <Skeleton className="h-32" />
       <Skeleton className="h-32" />

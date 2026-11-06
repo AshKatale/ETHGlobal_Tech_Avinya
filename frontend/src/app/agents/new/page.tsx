@@ -131,7 +131,7 @@ function Form() {
 
 export default function NewAgent() {
   return (
-    <RequireAuth>
+    <RequireAuth pageHeading>
       <Form />
     </RequireAuth>
   );

@@ -6,6 +6,7 @@ done:
 - Task 3: Bearer token sent on agreement, verification, a2a (query key switches on sign-in); viewerAccess "public" shows the limited-view notice, hides raw errors, keeps hashes, verdict, nonce, signature, tx links.
 - Task 4: ClaimRefund (POST /agreements/:id/refund-timeout) with 409 countdown, 501 text, success tx link; no local refunded state. NOT VERIFIED against a real V2 escrow.
 - Task 5: CLICKTEST.md updated. Task 6: build, lint, 13 tests pass; 10 routes return 200 on next dev (backend absent).
+- Hydration fix: useWallet hasWallet via useSyncExternalStore (server snapshot false); token already used useSyncExternalStore with null server snapshot; other Date.now/locale uses only render after client fetch. h1 added on /connect, /requests/new, /agents/new (ConnectPanel pageHeading) and detail pages' loading/error/not-found states. hydration.mjs PASS; build, lint, 13 tests pass. Real MetaMask flows NOT VERIFIED.
 blocked on: nothing
 needs from others: V2 escrow deployment and a running backend for click-testing.
 next: QA browser click-through.

@@ -25,12 +25,13 @@ function Step({ n, title, state, error, children }: { n: number; title: string; 
   );
 }
 
-export function ConnectPanel({ onDone }: { onDone?: () => void }) {
+export function ConnectPanel({ onDone, pageHeading = false }: { onDone?: () => void; pageHeading?: boolean }) {
+  const Heading = pageHeading ? "h1" : "h2";
   const w = useWallet();
   const done = w.signedIn && w.isConnected && w.onHedera;
   return (
     <Card className="mx-auto max-w-xl">
-      <h2 className="text-xl font-semibold">Connect and sign in</h2>
+      <Heading className="text-xl font-semibold">Connect and sign in</Heading>
       {!w.hasWallet && (
         <div className="mt-4">
           <Alert tone="warning" title="No EVM wallet found.">
@@ -80,8 +81,8 @@ export function ConnectPanel({ onDone }: { onDone?: () => void }) {
 }
 
 /** Shows children once signed in; otherwise the connect panel. */
-export function RequireAuth({ children }: { children: ReactNode }) {
+export function RequireAuth({ children, pageHeading = false }: { children: ReactNode; pageHeading?: boolean }) {
   const w = useWallet();
-  if (!w.signedIn) return <ConnectPanel />;
+  if (!w.signedIn) return <ConnectPanel pageHeading={pageHeading} />;
   return <>{children}</>;
 }

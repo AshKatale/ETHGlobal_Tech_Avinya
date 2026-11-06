@@ -23,8 +23,8 @@ export default function RequestPage() {
 
   if (q.isLoading) return <PageSkeleton />;
   if (q.isError) {
-    if (q.error.status === 404) return <EmptyState title="Request not found" action={<ButtonLink href="/">Marketplace</ButtonLink>} />;
-    return <QueryError error={q.error} title="Could not load request" onRetry={() => q.refetch()} />;
+    if (q.error.status === 404) return <EmptyState title="Request not found" pageHeading action={<ButtonLink href="/">Marketplace</ButtonLink>} />;
+    return <><h1 className="sr-only">Request</h1><QueryError error={q.error} title="Could not load request" onRetry={() => q.refetch()} /></>;
   }
   const { request, quotes } = q.data!;
   const isClient = me.data?.id === request.clientUserId;

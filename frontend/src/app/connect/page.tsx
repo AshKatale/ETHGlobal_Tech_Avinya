@@ -4,5 +4,5 @@ import { ConnectPanel } from "@/components/ConnectPanel";
 
 export default function ConnectPage() {
   const router = useRouter();
-  return <ConnectPanel onDone={() => router.back()} />;
+  return <ConnectPanel pageHeading onDone={() => router.back()} />;
 }

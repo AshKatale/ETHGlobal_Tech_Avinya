@@ -86,7 +86,7 @@ function Form() {
 
 export default function NewRequest() {
   return (
-    <RequireAuth>
+    <RequireAuth pageHeading>
       <Form />
     </RequireAuth>
   );

@@ -72,8 +72,8 @@ export default function JobPage() {
 
   if (dq.isLoading) return <PageSkeleton />;
   if (dq.isError) {
-    if (dq.error.status === 404) return <EmptyState title="Job not found" />;
-    return <QueryError error={dq.error} title="Could not load the job" onRetry={() => dq.refetch()} />;
+    if (dq.error.status === 404) return <EmptyState title="Job not found" pageHeading />;
+    return <><h1 className="sr-only">Job</h1><QueryError error={dq.error} title="Could not load the job" onRetry={() => dq.refetch()} /></>;
   }
   const d = dq.data!;
   const a = d.agreement;
