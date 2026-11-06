@@ -1,0 +1,6 @@
+status: open
+priority: normal
+what: Hashio (https://testnet.hashio.io/api) answered in 7-25 s or with an HTML 502/504 page during the QA window, and the backend gave up with "The request took too long to respond" on chain writes. Effects seen: POST /quotes/:id/accept returned escrowError (retry route worked, 502 several times); /a2a/call returned 502 "Payment failed" (row set failed, not counted, correct); a verification ended ERROR at submitOnChain (correct, retry worked). Ask: (1) give the backend viem transports an explicit longer timeout (for example 60000 ms; client.ts uses http(env.HEDERA_RPC_URL, { retryCount }) with viem's 10 s default per attempt), (2) after a timed-out send, check the chain (escrowOf / state / receipt) before declaring failure, so a tx that landed is not reported as "Payment failed" or re-sent.
+evidence: docs/qa/report.md section "Environment"; agreements 5c29140f-3bc6-44ff-be63-cdc975b4dc86 (two /a2a/call 502 rounds before one succeeded) and b3cec44d-a8fc-46bd-8295-3839c1621ccf (verification a9d15729-ab65-4886-832c-29492f794def ERROR "The request took too long to respond"). Repro is environmental; run e2e/02-stub-chain.ts while Hashio is slow.
+acceptance: with the same slow RPC the accept, a2a call and submit paths succeed or report a retryable error without a landed transaction being treated as failed.
+response:
