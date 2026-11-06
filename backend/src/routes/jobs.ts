@@ -3,7 +3,8 @@ import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent, requireUser, sha256 } from '../lib/auth.js';
-import { assertTransition, canTransition, type AgreementStatus } from '../lib/stateMachine.js';
+import { canTransition, type AgreementStatus } from '../lib/stateMachine.js';
+import { ensureSubmittedOnChain, settle } from '../chain/ops.js';
 import { fetchRepo } from '../lib/github.js';
 import { verify } from '../lib/analyzer.js';
 import { uploadJson } from '../lib/zerog.js';
@@ -21,6 +22,8 @@ export async function runVerification(agreementId: string) {
     const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, agreement.requestId)).limit(1);
     const [submission] = await db.select().from(schema.submissions).where(eq(schema.submissions.agreementId, agreementId)).limit(1);
     if (!submission) throw new Error('No submission found');
+    // Record the deliverable hash on-chain first; release/refund need the escrow in the Submitted state.
+    await ensureSubmittedOnChain(agreementId);
 
     const files = submission.kind === 'repo' ? (await fetchRepo(submission.content)).files : { 'submission.txt': submission.content };
     const result = await verify({ requirements: request.requirements, checks: request.checksRequested, files });
@@ -40,8 +43,9 @@ export async function runVerification(agreementId: string) {
       summary: result.summary,
       reportRoot,
     });
-    // Signature + on-chain release/refund are added in Phase 3 (steps 3.6-3.7).
     await db.insert(schema.verdicts).values({ agreementId, result: verdictResult }).onConflictDoNothing();
+    // Sign the verdict and send release/refund. If the chain fails the verdict is kept and POST /agreements/:id/settle retries.
+    try { await settle(agreementId); } catch { /* error is stored on the verdict (settle_error) */ }
   } catch (e) {
     await db.insert(schema.verifications).values({ agreementId, result: 'ERROR', error: (e as Error).message });
     // Back to 'submitted' so the retry button works.
@@ -105,23 +109,15 @@ export async function jobRoutes(app: FastifyInstance) {
     };
   });
 
-  // DEV ONLY: stands in for the on-chain Released/Refunded event until the indexer exists. Remove in step 3.9.
-  if (process.env.NODE_ENV !== 'production') {
-    app.post('/dev/agreements/:id/settle', async (req, reply) => {
-      const { id } = idParam.parse(req.params);
-      const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
-      const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
-      if (!agreement || !verdict) return reply.code(404).send({ error: 'Agreement or verdict missing' });
-      const to: AgreementStatus = verdict.result === 'PASS' ? 'released' : 'refunded';
-      assertTransition(agreement.status as AgreementStatus, to);
-      await db.update(schema.agreements).set({ status: to }).where(eq(schema.agreements.id, id));
-      await db.insert(schema.payments).values({
-        agreementId: id,
-        kind: to === 'released' ? 'release' : 'refund',
-        amountTinybar: agreement.priceTinybar,
-        status: 'confirmed',
-      });
-      return { ok: true, status: to };
-    });
-  }
+  // Retry settlement (release/refund) if the chain failed after the verdict was stored.
+  app.post('/agreements/:id/settle', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
+    try {
+      return await settle(id);
+    } catch (e) {
+      return reply.code(502).send({ error: `Chain error: ${(e as Error).message}` });
+    }
+  });
 }
