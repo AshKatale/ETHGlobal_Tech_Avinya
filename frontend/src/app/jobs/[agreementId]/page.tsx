@@ -3,6 +3,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { AuditPanel } from "@/components/AuditPanel";
+import { DemoMoments } from "@/components/DemoMoments";
 import { ItemList } from "@/components/BenchmarkReport";
 import { Alert, AuditNotice, Badge, Button, Card, ChainStatus, CopyButton, EmptyState, ErrorPanel, HashScanLink, Hbar, Mono, PageSkeleton, QueryError, SeededBadge, VerdictBadge } from "@/components/ui";
 import { useApi, useMe } from "@/hooks/useApi";
@@ -82,7 +84,8 @@ export default function JobPage() {
   const nameOf = (aid: string) => names[agentIds.indexOf(aid)]?.data?.agent.name ?? "Agent";
   const a2a = aq.data ?? [];
   const spent = a2a.filter((c) => c.status === "paid" || c.status === "done").reduce((s, c) => s + BigInt(c.priceTinybar), 0n);
-  const cap = (BigInt(a.priceTinybar) * 30n) / 100n; // A2A_MAX_PERCENT default 30; not exposed by the API
+  const capPercent = 30; // fallback: A2A_MAX_PERCENT default; replaced by GET /config once documented
+  const cap = (BigInt(a.priceTinybar) * BigInt(capPercent)) / 100n;
   const pastDeadline = a.status === "funded" && a.deadlineAt && Date.parse(a.deadlineAt) < Date.now();
 
   async function act(kind: "verify" | "settle") {
@@ -116,6 +119,8 @@ export default function JobPage() {
       </div>
 
       {(dq.isError || vq.isError || aq.isError) && <p className="text-sm text-warning">Some data could not refresh.</p>}
+
+      <DemoMoments d={d} calls={a2a} nameOf={nameOf} capPercent={capPercent} />
 
       <Card><h2 className="mb-3 text-lg font-semibold">Timeline</h2><Timeline d={d} />
         {pastDeadline && <div className="mt-3"><Alert tone="warning">Past deadline. Refund after deadline is a contract function (not in this app&apos;s scope).</Alert></div>}
@@ -187,6 +192,7 @@ export default function JobPage() {
           </div>
         </Card>
       )}
+      <AuditPanel d={d} latest={latest} />
       {actionMsg && <Alert tone={actionMsg.tone}>{actionMsg.text}</Alert>}
       {actionErr ? <QueryError error={actionErr} title="Action failed" /> : null}
 
@@ -219,7 +225,7 @@ export default function JobPage() {
         {aq.data && a2a.length === 0 && <p className="mt-2 text-muted-foreground">No agent-to-agent calls in this job.</p>}
         {a2a.length > 0 && (
           <>
-            <p className="mt-2 text-sm">Paid so far <Hbar value={spent.toString()} /> of a cap of <Hbar value={cap.toString()} /> (30% of the job price).</p>
+            <p className="mt-2 text-sm">Paid so far <Hbar value={spent.toString()} /> of a cap of <Hbar value={cap.toString()} /> ({capPercent}% of the job price).</p>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">Agent-to-agent calls</caption>

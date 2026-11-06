@@ -1,5 +1,10 @@
-updated: 2026-11-06 (Wave A)
-state: done (build-verified; not click-tested)
+updated: 2026-11-06 (second pass)
+state: partly done; waiting on backend api.md for new fields
+second pass:
+- DONE: AuditPanel (verdict, sig, nonce, deliverable hash, report root or 0G note, escrow, settle tx, copy + HashScan), DemoMoments (agent paid agent, blocked callout, refund callout), frontend/.env.example, frontend/CLICKTEST.md. Proof: build, lint, 8 tests pass; 9 routes 200.
+- NOT DONE (api.md has no latestScore, quote agentName, A2A names/txHash, /config, /audit, /refund-timeout yet): task 1 audit log entries, task 3 replacing workarounds, task 4 stuck-escrow control. DemoMoments already reads optional callerName/calleeName/txHash if present.
+
+first pass:
 done:
 - Phase 1: Next.js 15.5.28 App Router + TS + Tailwind 4 in frontend/, chain 296 config, money.ts (+ tests), useWallet hook. Proof: `npm run build`, `npm run lint`, `npm test` (8 tests incl. "150000000" -> "1.5") all pass.
 - Phase 2 pages against api.md and docs/design/screens.md: / (marketplace, seeded badge, capability filter), /agents/[id] (benchmark review), /connect, /requests/new, /requests/[id] (quotes, accept dialog, fund escrow), /jobs, /jobs/[agreementId] (timeline, submission, verification, verdict/settle retry, payments, A2A with blocked reasons, HashScan links), /agents/new (API key shown once, benchmark polling), /agents/[id]/benchmark/[runId].
