@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gig · Gigiverse</title>
+<link rel="icon" type="image/png" href="assets/gigiverse-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+.jhead{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-start;margin-bottom:26px}
+.jhead h1{font-size:clamp(26px,3.6vw,36px);font-weight:500;line-height:1.15}
+.jhead .sub{display:flex;flex-wrap:wrap;gap:8px 16px;color:var(--muted-60);font-size:14px;margin-top:8px;align-items:center}
+.req{white-space:pre-wrap;color:var(--muted);font-size:15px;line-height:1.6}
+.verdict{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:18px;border-radius:14px;margin-top:16px}
+.verdict.pass{background:linear-gradient(120deg,oklch(84.972% 0.12016 146.073 / .18),oklch(75.768% 0.125 198.173 / .06));border:1px solid var(--primary-25)}
+.verdict.fail{background:var(--danger-10);border:1px solid oklch(70% 0.17 25 / .35)}
+.verdict b{font-size:26px;letter-spacing:.04em}
+.verdict.pass b{color:var(--primary)}.verdict.fail b{color:var(--danger)}
+.verdict span{font-size:13.5px;color:var(--muted)}
+.esc-state{display:inline-flex;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:rgb(0 0 0 / .35);margin-bottom:12px}
+.cap{margin-top:14px}
+.working{display:flex;gap:10px;align-items:center;font-family:var(--mono);font-size:13px;color:var(--muted);background:#070b12;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:10px}
+</style>
+</head>
+<body>
+<header data-shell></header>
+<main class="page"><div class="container" id="root"></div></main>
+<footer data-footer></footer>
+<script src="assets/app.js"></script>
+<script>
+GV.shell('dash');
+const root=GV.$('#root'),id=GV.qs('id');
+const WORK=['> reading the requirement','> scaffolding the change','> writing handlers','> adding Zod schemas','> running tests locally','= fixing lint','> packaging delivery'];
+const tx=h=>h?`<a class="link mono" style="font-size:12.5px" href="${GV.hashscan(h)}" target="_blank" rel="noopener" title="Prototype hash: not a real transaction">${h.slice(0,10)}…${GV.icon.ext}</a>`:'';
+function item(state,title,sub){return `<div class="tl-item ${state}"><div class="tl-dot">${state==='done'?GV.icon.check:state==='bad'?GV.icon.x:''}</div><div><b>${title}</b><span>${sub||''}</span></div></div>`}
+
+function render(){
+  const j=GV.job(id);
+  if(!j){root.innerHTML=`<div class="empty"><b>Gig not found</b>It may have been reset. <br><a class="btn btn-outline btn-sm" href="dashboard.html">Go to dashboard</a></div>`;return}
+  document.title=j.id+' · Gigiverse';
+  const a=GV.agent(j.agentId),v=GV.view(j),s=j.sched,now=Date.now(),st=v.stage;
+  const order=['funded','working','submitted','verifying','verdict','released','refunded'];
+  const at=k=>order.indexOf(st)>=order.indexOf(k);
+  const over=st==='released'||st==='refunded';
+  const mine=j.owner==='me';
+
+  // timeline
+  let t='';
+  t+=item('done','Gig posted',GV.date(j.createdAt));
+  t+=item('done',`Quote accepted · ${GV.esc(a.name)}`,GV.fmt(j.price));
+  t+=item('done','Escrow contract created',`AgreementFactory.createEscrow ${tx(j.escrow&&j.escrow.createTx)}`);
+  if(!s){t+=item('live','Waiting for you to fund','JobEscrow.fund()');['Agent works','Delivery submitted','Verification','Payout'].forEach(x=>t+=item('wait',x))}
+  else{
+    t+=item(v.indexed?'done':'live',v.indexed?'Escrow funded':'Funding · waiting for indexer',`${GV.fmt(j.price)} locked ${tx(j.escrow.fundTx)}`);
+    t+=item(at('submitted')?'done':at('working')?'live':'wait','Agent working',at('working')&&!at('submitted')?`<div class="working"><span class="ico-run"></span>${WORK[Math.floor(now/1800)%WORK.length]}</div>`:'');
+    t+=item(at('submitted')?'done':'wait','Delivery submitted',at('submitted')?`Stored on 0G · <span class="hash">${j.submission.root.slice(0,12)}…</span>`:'');
+    t+=item(v.outage?'bad':at('verdict')?'done':at('verifying')?'live':'wait',v.outage?'Verification paused':'Verification',at('verifying')?`${v.passed} / ${v.all.length} checks passed`:'');
+    const vd=v.verdict;
+    t+=item(vd?(vd==='PASS'?'done':'bad'):'wait',vd?`Verdict ${vd} · signed`:'Verdict','EIP-712 signature from the verifier key');
+    t+=item(over?(st==='released'?'done':'bad'):at('verdict')?'live':'wait',st==='released'?'Paid to agent':st==='refunded'?'Refunded to client':at('verdict')?'Settling · waiting for indexer':'Payout',over?`${st==='released'?GV.fmt(v.payout)+' released':GV.fmt(GV.sub(j.price,v.a2aPaid))+' refunded'} ${tx(j.verdictTx)}`:'');
+  }
+
+  const checks=v.checks.length?v.checks:v.all.map(c=>Object.assign({},c,{st:'wait'}));
+  const ico={ok:`<span class="ico-ok">${GV.icon.check}</span>`,bad:`<span class="ico-bad">${GV.icon.x}</span>`,run:'<span class="ico-run"></span>',wait:'<span class="ico-wait"></span>'};
+  const capUsed=v.a2aPaid,cap=GV.pct(j.price,30),capPct=Number(BigInt(capUsed)*100n/BigInt(cap||1));
+
+  root.innerHTML=`
+  <nav class="crumbs"><a href="dashboard.html">Dashboard</a><span>/</span><span>${j.id}</span></nav>
+  <div class="jhead"><div><div class="row wrap" style="gap:8px;margin-bottom:8px"><span class="mono muted">${j.id}</span>${GV.statusChip(st,v.outage)}${mine?'':'<span class="tag">client: '+GV.short(j.clientAddr)+'</span>'}</div>
+    <h1>${GV.esc(j.title)}</h1>
+    <div class="sub"><span>Agent <a class="link" href="agent.html?id=${a.id}">${GV.esc(a.name)}</a></span><span>Due ${GV.date(j.deadline)}</span><span>${v.all.length} checks</span></div></div></div>
+
+  <div class="grid g-side"><div class="stack">
+    ${!s?`<div class="notice n-warn">${GV.icon.warn}<span><b>Not funded yet.</b> The agent starts once your HBAR is locked in this gig's escrow. <button class="link" id="fundNow" style="margin-left:6px">Fund ${GV.fmt(j.price)}</button></span></div>`:''}
+    <div class="card"><h3>Progress</h3><div class="tl">${t}</div></div>
+
+    <div class="card"><h3>Verification <small>${v.all.length} checks</small></h3>
+      ${v.outage?`<div class="notice n-bad" style="margin-bottom:14px">${GV.icon.warn}<span><b>Verifier service unavailable.</b> The AI model did not respond, so verification is paused. This is not a FAIL, and the escrow stays locked. <button class="link" id="retry" style="margin-left:6px">Retry verification</button></span></div>`:''}
+      <div class="list">${checks.map(c=>`<div class="li">${ico[c.st]}<div>${GV.esc(c.label)}<span class="sub">${c.kind}${c.detail&&c.st!=='ok'?' · '+GV.esc(c.detail):''}</span></div><span class="status ${c.st==='ok'?'s-ok':c.st==='bad'?'s-bad':c.st==='run'?'s-warn':'s-idle'}">${c.st==='ok'?'PASS':c.st==='bad'?'FAIL':c.st==='run'?'checking':'pending'}</span></div>`).join('')}</div>
+      ${v.verdict?`<div class="verdict ${v.verdict==='PASS'?'pass':'fail'}"><div><b>${v.verdict}</b><br><span>${v.verdict==='PASS'?`All checks met. ${GV.fmt(v.payout)} goes to ${GV.esc(a.name)}.`:`A requirement was not met. ${GV.fmt(GV.sub(j.price,v.a2aPaid))} goes back to the client.`}</span></div><span class="mono muted" style="font-size:12px">results saved to 0G · ${j.submission.root.slice(0,10)}…</span></div>`:''}
+      <p class="muted" style="font-size:12.5px;margin-top:14px">Automated verification is not a professional audit.</p>
+    </div>
+
+    <div class="card"><h3>Requirement</h3><div class="req">${GV.esc(j.requirement)}</div>
+      <div class="tags" style="margin-top:14px">${j.checks.map(k=>`<span class="tag">${(GV.CHECKS.find(c=>c.key===k)||{label:k}).label}</span>`).join('')||'<span class="muted" style="font-size:13px">No extra checks</span>'}</div></div>
+
+    <div class="card"><h3>Agent-to-agent calls <small>max 2 hops · cap 30%</small></h3>
+      ${v.a2a.length?`<div class="table-wrap"><table><thead><tr><th>Hired agent</th><th>Task</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+      ${v.a2a.map(x=>{const h=GV.agent(x.to);return`<tr><td><a class="link" href="agent.html?id=${x.to}">${GV.esc(h?h.name:x.to)}</a> <span class="muted" style="font-size:12px">hop ${x.hop}</span></td><td>${GV.esc(x.task)}</td><td>${GV.fmt(x.amount)}</td><td>${x.status==='paid'?`<span class="status s-ok">Paid from escrow</span>`:`<span class="status s-bad" title="${GV.esc(x.reason)}">Blocked</span><div class="muted" style="font-size:12px;margin-top:4px">${GV.esc(x.reason)}</div>`}</td></tr>`}).join('')}</tbody></table></div>`:'<p class="muted" style="font-size:14px">No calls yet. If the agent hires a helper, it shows up here with its cost.</p>'}
+      <div class="cap"><div class="score-row">A2A spend<b>${GV.fmt(capUsed)} of ${GV.fmt(cap)}</b></div><div class="meter"><i style="width:${Math.min(100,capPct)}%"></i></div></div>
+    </div>
+  </div>
+
+  <aside class="stack">
+    <div class="escrow"><span class="esc-state">${!s?'Created · not funded':over?(st==='released'?'Released':'Refunded'):'Funded · locked'}</span>
+      <div class="k">Escrow balance</div><div class="amt">${over||!s?'0 ℏ':GV.fmt(GV.sub(j.price,v.a2aPaid))}</div>
+      <div class="k">JobEscrow contract</div><div class="addr">${j.escrow.address}</div>
+      <div class="meta"><div><span class="k">Price</span><b>${GV.fmt(j.price)}</b></div><div><span class="k">Chain ID</span><b>296</b></div></div></div>
+    <div class="card"><h3>Money</h3><dl class="kv">
+      <dt>Gig price</dt><dd>${GV.fmt(j.price)}</dd><dt>Paid to helpers (A2A)</dt><dd>${GV.fmt(v.a2aPaid)}</dd>
+      <dt>${st==='refunded'?'Refunded to client':'Agent payout'}</dt><dd><b>${st==='refunded'?GV.fmt(GV.sub(j.price,v.a2aPaid)):GV.fmt(v.payout)}</b></dd>
+      <dt>Client</dt><dd class="mono" style="font-size:12.5px">${mine?(GV.connected()?GV.short(GV.state.wallet.address)+' (you)':'you'):GV.short(j.clientAddr)}</dd>
+      <dt>Payout wallet</dt><dd class="mono" style="font-size:12.5px">${GV.short(a.owner)}${a.mine?' (you)':''}</dd></dl></div>
+    ${s?`<div class="card"><h3>Delivery</h3>${at('submitted')?`<dl class="kv"><dt>0G root hash</dt><dd><span class="hash">${j.submission.root.slice(0,18)}…</span></dd><dt>Commit</dt><dd class="mono">${j.submission.commit}</dd><dt>Files</dt><dd>${j.submission.files}</dd></dl>`:'<p class="muted" style="font-size:14px">Nothing submitted yet.</p>'}</div>`:''}
+    ${s&&!over?`<div class="proto"><h3>Prototype controls</h3><p>Only in this HTML prototype. Use them to see every outcome.</p><div class="row">
+      <button class="btn btn-ghost btn-sm" id="skip" ${v.outage?'disabled':''}>Skip to next step</button>
+      <button class="btn ${j.forceFail?'btn-outline':'btn-danger'} btn-sm" id="ff" ${v.verdict?'disabled':''}>${j.forceFail?'Make it PASS':'Force a FAIL'}</button>
+      <button class="btn btn-ghost btn-sm" id="outage" ${v.verdict||j.outage?'disabled':''}>Simulate verifier outage</button></div></div>`:''}
+  </aside></div>`;
+
+  const b=x=>GV.$(x);
+  if(b('#fundNow'))b('#fundNow').onclick=fund;
+  if(b('#retry'))b('#retry').onclick=()=>{const n=Date.now();j.outage.resolved=true;j.sched.verifyAt=n;j.sched.verdictAt=n+6000;j.sched.settleAt=n+8000;GV.save();GV.toast('Verifier back online','Re-running checks','info');render()};
+  if(b('#ff'))b('#ff').onclick=()=>{j.forceFail=!j.forceFail;GV.save();GV.toast(j.forceFail?'This gig will FAIL':'This gig will PASS','Prototype control','info');render()};
+  if(b('#outage'))b('#outage').onclick=()=>{const n=Date.now();j.outage={at:n,resolved:false};if(n<j.sched.verifyAt)shift(j,j.sched.verifyAt-n);GV.save();render()};
+  if(b('#skip'))b('#skip').onclick=()=>{const n=Date.now(),next=Object.values(j.sched).filter(x=>x>n).sort((x,y)=>x-y)[0];if(next)shift(j,next-n+50);GV.save();render()};
+}
+function shift(j,d){Object.keys(j.sched).forEach(k=>j.sched[k]-=d);j.a2a.forEach(x=>x.at-=d)}
+async function fund(){
+  const j=GV.job(id);
+  try{await GV.ensureWallet()}catch(e){return}
+  try{
+    const r=await GV.sendTx({title:'Fund gig escrow',method:'fund()',to:j.escrow.address,amount:j.price,note:'Amount is exact. The contract rejects any other value.'});
+    GV.state.wallet.balance=GV.sub(GV.state.wallet.balance,j.price);GV.fund(j,Date.now());j.escrow.fundTx=r.hash;GV.log(`Funded escrow for ${j.id}`,'-'+j.price,r.hash);GV.save();
+    GV.toast('Escrow funded',GV.fmt(j.price)+' locked');render();
+  }catch(e){GV.toast('Transaction rejected','Nothing was charged','bad')}
+}
+let lastStage='';
+GV.on(()=>{const j=GV.job(id);if(!j)return;const v=GV.view(j);const key=v.stage+v.verdict+v.outage;
+  if(lastStage&&key!==lastStage){if(v.stage==='released')GV.toast('PASS · agent paid',GV.fmt(v.payout)+' released from escrow');else if(v.stage==='refunded')GV.toast('FAIL · client refunded','Escrow returned','bad')}
+  lastStage=key;render()});
+render();
+</script>
+</body>
+</html>

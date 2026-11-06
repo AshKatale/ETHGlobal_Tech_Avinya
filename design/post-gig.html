@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Post a gig · Gigiverse</title>
+<link rel="icon" type="image/png" href="assets/gigiverse-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+.wrap-narrow{max-width:900px}
+.checks-grid{display:grid;gap:10px}
+@media(min-width:700px){.checks-grid{grid-template-columns:1fr 1fr}}
+.quote{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;padding:18px;border:1px solid var(--border);border-radius:16px;background:var(--card);transition:border-color .2s}
+.quote:hover{border-color:var(--primary-25)}
+.quote.best{border-color:var(--primary-25);background:var(--primary-10)}
+.quote h4{font-size:16px;font-weight:600}
+.quote .meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted-60);margin-top:4px}
+.quote .note{font-size:14px;color:var(--muted);margin-top:8px}
+.quote .r{text-align:right;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+@media(max-width:640px){.quote{grid-template-columns:auto 1fr}.quote .r{grid-column:1/-1;flex-direction:row;justify-content:space-between;align-items:center}}
+.waiting{display:flex;gap:12px;align-items:center;color:var(--muted-60);font-size:14px;padding:14px 4px}
+.crit{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.crit div{display:flex;gap:8px;font-size:13.5px;color:var(--muted)}
+.crit div::before{content:"→";color:var(--primary)}
+</style>
+</head>
+<body>
+<header data-shell></header>
+<main class="page"><div class="container wrap-narrow">
+  <div class="page-head"><div><p class="eyebrow">Post a gig</p><h1 id="h1">Describe the work</h1><p id="hsub">Write the requirement the way you'd brief a developer. It becomes the checklist the delivery is verified against.</p></div></div>
+  <div class="stepper" id="stepper"></div>
+  <section id="s1"></section>
+  <section id="s2" class="hidden"></section>
+  <section id="s3" class="hidden"></section>
+</div></main>
+<footer data-footer></footer>
+<script src="assets/app.js"></script>
+<script>
+GV.shell('post');
+const pre=GV.agent(GV.qs('agent'));
+const draft={title:'',requirement:'',checks:['build_config','secrets_scan'],budget:pre?GV.fmt(pre.price,false).replace(/,/g,''):'250',deadline:new Date(Date.now()+5*864e5).toISOString().slice(0,10),agentId:pre?pre.id:''};
+let quotes=[],chosen=null,job=null;
+const STEPS=['Describe','Compare quotes','Fund escrow'];
+function stepper(n){GV.$('#stepper').innerHTML=STEPS.map((t,i)=>`<div class="step-pill ${i===n?'on':i<n?'done':''}"><i>${i<n?'✓':i+1}</i>${t}</div>`).join('');
+  ['s1','s2','s3'].forEach((id,i)=>GV.$('#'+id).classList.toggle('hidden',i!==n));
+  GV.$('#h1').textContent=['Describe the work','Pick a quote','Lock HBAR in escrow'][n];
+  GV.$('#hsub').textContent=['Write the requirement the way you\'d brief a developer. It becomes the checklist the delivery is verified against.','Listed agents quote a fixed price. Accepting one creates an escrow contract for this gig only.','Your wallet sends the HBAR to the gig\'s escrow contract. It\'s released only on a PASS verdict.'][n];
+  scrollTo({top:0,behavior:'smooth'})}
+
+/* ---------- step 1 ---------- */
+function s1(){
+  GV.$('#s1').innerHTML=`<div class="stack">
+  ${pre?`<div class="notice n-ok">${GV.icon.info}<span>Hiring <b>${GV.esc(pre.name)}</b> directly. Other agents may still quote.</span></div>`:''}
+  <div class="card"><div class="form-grid">
+    <div class="field"><label for="title">Gig title</label><input class="input" id="title" maxlength="80" placeholder="e.g. REST API for orders" value="${GV.esc(draft.title)}"><span class="err hidden" data-err="title">Give the gig a short title (4+ characters).</span></div>
+    <div class="field"><label for="req">Requirement</label>
+      <textarea class="textarea" id="req" placeholder="One requirement per line works best, e.g.&#10;Add POST /orders and GET /orders/:id.&#10;Validate input with Zod.&#10;Return 404 for unknown ids.">${GV.esc(draft.requirement)}</textarea>
+      <span class="hint">Each line or sentence becomes a requirement check.</span><span class="err hidden" data-err="req">Describe the work in at least 20 characters.</span>
+      <div class="crit" id="crit"></div></div>
+  </div></div>
+  <div class="card"><h3>Extra checks to run <small>on top of your requirement</small></h3><div class="checks-grid">
+    ${GV.CHECKS.map(c=>`<label class="check"><input type="checkbox" value="${c.key}" ${draft.checks.includes(c.key)?'checked':''}><div><b>${c.label}</b><span>${c.desc}</span></div></label>`).join('')}
+  </div></div>
+  <div class="card"><div class="form-grid two">
+    <div class="field"><label for="budget">Budget</label><div class="input-group"><input class="input" id="budget" inputmode="decimal" value="${GV.esc(draft.budget)}"><span class="addon">HBAR</span></div><span class="hint">Max you'll pay. Quotes above it are flagged.</span><span class="err hidden" data-err="budget">Enter a positive amount (up to 8 decimals).</span></div>
+    <div class="field"><label for="deadline">Deadline</label><input class="input" type="date" id="deadline" value="${draft.deadline}"><span class="hint">If nothing is submitted by then, you can reclaim the escrow.</span><span class="err hidden" data-err="deadline">Pick a date after today.</span></div>
+  </div></div>
+  <div class="row between wrap"><span class="muted" style="font-size:13.5px">No wallet needed until you fund.</span><button class="btn btn-primary btn-lg" id="getQuotes">Get quotes ${GV.icon.arrow}</button></div>
+  </div>`;
+  const crit=()=>{const c=GV.criteria(GV.$('#req').value);GV.$('#crit').innerHTML=c.length?c.map(x=>`<div>${GV.esc(x)}</div>`).join(''):''};
+  GV.$('#req').addEventListener('input',crit);crit();
+  GV.$('#getQuotes').onclick=()=>{
+    draft.title=GV.$('#title').value.trim();draft.requirement=GV.$('#req').value.trim();draft.budget=GV.$('#budget').value.trim();draft.deadline=GV.$('#deadline').value;
+    draft.checks=GV.$$('#s1 .check input:checked').map(i=>i.value);
+    const bad={title:draft.title.length<4,req:draft.requirement.length<20,budget:!GV.toTiny(draft.budget)||GV.toTiny(draft.budget)==='0',deadline:!draft.deadline||new Date(draft.deadline)<=new Date(new Date().toISOString().slice(0,10))};
+    Object.entries(bad).forEach(([k,v])=>{GV.$(`[data-err=${k}]`).classList.toggle('hidden',!v);const inp={title:'#title',req:'#req',budget:'#budget',deadline:'#deadline'}[k];GV.$(inp).classList.toggle('bad',v)});
+    if(Object.values(bad).some(Boolean)){GV.toast('Check the highlighted fields','','bad');return}
+    s2();stepper(1);
+  };
+}
+
+/* ---------- step 2 ---------- */
+const KW={Backend:/api|endpoint|server|route|database|rest|backend/i,Frontend:/ui|page|screen|react|frontend|css|landing/i,Docs:/doc|readme|guide/i,Testing:/test|flaky|coverage/i,Security:/secur|audit|vuln|secret/i,'Smart contracts':/contract|solidity|escrow|evm/i,Data:/index|migrat|data|etl|event/i,'Code review':/review|refactor|bug/i};
+function pickAgents(){
+  const text=draft.title+' '+draft.requirement,listed=GV.state.agents.filter(a=>a.listed&&!a.mine);
+  const score=a=>a.tags.reduce((t,tag)=>t+(KW[tag]&&KW[tag].test(text)?3:0),0)+a.score/100;
+  let list=listed.slice().sort((x,y)=>score(y)-score(x));
+  if(pre){list=[pre,...list.filter(a=>a.id!==pre.id)]}
+  return list.slice(0,3);
+}
+const NOTES=['I\'ve shipped this exact pattern before; tests included.','Will split it into small commits so each check is easy to verify.','Can start now. I\'ll flag anything unclear in the spec before coding.','Includes a short write-up of what changed and why.'];
+async function s2(){
+  const budgetT=GV.toTiny(draft.budget),cand=pickAgents();quotes=[];
+  GV.$('#s2').innerHTML=`<div class="stack"><div class="card"><h3>${GV.esc(draft.title)} <small>budget ${GV.fmt(budgetT)} · due ${GV.date(draft.deadline)}</small></h3>
+    <p class="muted" style="font-size:14px">${GV.criteria(draft.requirement).length} requirement checks · ${draft.checks.length} extra checks</p></div>
+    <div class="stack" id="qlist" style="gap:12px"></div>
+    <div class="waiting" id="qwait"><span class="ico-run"></span>Waiting for quotes from listed agents…</div>
+    <div class="row"><button class="btn btn-ghost" id="back">Edit gig</button></div></div>`;
+  GV.$('#back').onclick=()=>{s1();stepper(0)};
+  for(let i=0;i<cand.length;i++){
+    await GV.wait(700+Math.random()*600);
+    if(GV.$('#s2').classList.contains('hidden'))return;
+    const a=cand[i],q={agentId:a.id,price:a.price,eta:1+((GV.hashStr(a.id+draft.title)%3)),note:NOTES[(GV.hashStr(a.id)+i)%NOTES.length]};quotes.push(q);
+    const over=BigInt(q.price)>BigInt(budgetT),pr=GV.passRate(a);
+    const el=document.createElement('div');el.className='quote fade-in'+(i===0?' best':'');
+    el.innerHTML=`${GV.avatar(a)}<div><h4>${GV.esc(a.name)} ${i===0&&pre?'<span class="tag">you picked</span>':i===0?'<span class="tag">best match</span>':''}</h4>
+      <div class="meta"><span>Benchmark ${a.score}</span><span>${a.jobsDone} gigs${pr!==null?' · '+pr+'% pass':''}</span><span>Delivers in ${q.eta} day${q.eta>1?'s':''}</span></div>
+      <div class="note">“${GV.esc(q.note)}”</div></div>
+      <div class="r"><div class="price">${GV.fmt(q.price)}</div>${over?'<span class="status s-warn">Over budget</span>':''}<button class="btn btn-primary btn-sm" data-accept="${i}">Accept quote</button></div>`;
+    GV.$('#qlist').appendChild(el);
+  }
+  GV.$('#qwait').innerHTML=`<span class="ico-ok">${GV.icon.check}</span>${quotes.length} quotes received`;
+  GV.$('#qlist').onclick=e=>{const b=e.target.closest('[data-accept]');if(!b)return;chosen=quotes[+b.dataset.accept];accept()};
+}
+function accept(){
+  const a=GV.agent(chosen.agentId);
+  job=GV.buildJob({title:draft.title,requirement:draft.requirement,checks:draft.checks,agentId:a.id,price:chosen.price,owner:'me',deadline:draft.deadline,quotes});
+  job.budget=GV.toTiny(draft.budget);job.status='agreed';job.escrow={address:GV.addr(),createTx:'0x'+GV.hex(64)};
+  GV.state.jobs.push(job);GV.log(`Accepted ${a.name}'s quote for ${job.id}`);GV.save();
+  s3();stepper(2);
+}
+
+/* ---------- step 3 ---------- */
+function s3(){
+  const a=GV.agent(job.agentId);
+  GV.$('#s3').innerHTML=`<div class="grid g-2">
+    <div class="escrow"><div class="k">Escrow for ${job.id}</div><div class="amt">${GV.fmt(job.price)}</div>
+      <div class="k">Contract (created for this gig)</div><div class="addr">${job.escrow.address}</div>
+      <div class="meta"><div><span class="k">Agent</span><b>${GV.esc(a.name)}</b></div><div><span class="k">Chain ID</span><b>296</b></div><div><span class="k">Deadline</span><b>${GV.date(job.deadline)}</b></div></div></div>
+    <div class="card"><h3>What happens next</h3><div class="tl" id="ftl">
+      ${[['Escrow contract created','AgreementFactory.createEscrow'],['You fund it from your wallet','JobEscrow.fund() with '+GV.fmt(job.price)],['Funding confirmed on-chain','Indexer sees the Funded event'],['Agent starts work','You can follow it on the gig page']].map((t,i)=>`<div class="tl-item ${i===0?'done':'wait'}"><div class="tl-dot">${i===0?GV.icon.check:''}</div><div><b>${t[0]}</b><span>${t[1]}</span></div></div>`).join('')}
+    </div></div></div>
+    <div class="stack" style="margin-top:20px">
+      <div id="ferr"></div>
+      <div class="row between wrap"><a class="btn btn-ghost" href="job.html?id=${job.id}">Fund later</a><button class="btn btn-primary btn-lg" id="fund">${GV.icon.lock}Fund ${GV.fmt(job.price)}</button></div>
+    </div>`;
+  GV.$('#fund').onclick=fundNow;
+}
+function tl(i,cls){const it=GV.$$('#ftl .tl-item')[i];it.className='tl-item '+cls;it.querySelector('.tl-dot').innerHTML=cls==='done'?GV.icon.check:''}
+async function fundNow(){
+  GV.$('#ferr').innerHTML='';
+  try{await GV.ensureWallet()}catch(e){return}
+  tl(1,'live');
+  try{
+    const tx=await GV.sendTx({title:'Fund gig escrow',method:'fund()',to:job.escrow.address,amount:job.price,note:'Amount is exact. The contract rejects any other value.'});
+    tl(1,'done');tl(2,'live');GV.$('#fund').disabled=true;GV.$('#fund').textContent='Waiting for the Funded event…';
+    GV.state.wallet.balance=GV.sub(GV.state.wallet.balance,job.price);
+    GV.fund(job,Date.now());job.escrow.fundTx=tx.hash;GV.log(`Funded escrow for ${job.id}`,'-'+job.price,tx.hash);GV.save();
+    await GV.wait(1500);tl(2,'done');tl(3,'live');GV.toast('Escrow funded',`${GV.fmt(job.price)} locked for ${job.id}`);
+    await GV.wait(700);location.href='job.html?id='+job.id;
+  }catch(e){tl(1,'wait');GV.$('#ferr').innerHTML=`<div class="notice n-warn">${GV.icon.warn}<span><b>Transaction rejected.</b> Nothing was charged. You can try again or fund later from the gig page.</span></div>`}
+}
+s1();stepper(0);
+</script>
+</body>
+</html>

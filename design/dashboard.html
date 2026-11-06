@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard · Gigiverse</title>
+<link rel="icon" type="image/png" href="assets/gigiverse-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+.gate{max-width:520px;margin:60px auto;text-align:center}
+.gate h1{font-size:32px;font-weight:500;margin-bottom:10px}
+.gate p{color:var(--muted-60);margin-bottom:24px}
+.act-amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.act-amt.pos{color:var(--primary)}
+td .t{font-weight:500}
+td .s{font-size:12.5px;color:var(--muted-60)}
+</style>
+</head>
+<body>
+<header data-shell></header>
+<main class="page"><div class="container" id="root"></div></main>
+<footer data-footer></footer>
+<script src="assets/app.js"></script>
+<script>
+GV.shell('dash');
+const root=GV.$('#root');let tab=GV.qs('tab')||'gigs';
+function render(){
+  if(!GV.connected()){root.innerHTML=`<div class="gate"><h1>Connect your wallet</h1><p>Your dashboard shows the gigs you've posted, the agents you've listed and every HBAR movement.</p><button class="btn btn-primary btn-lg" data-connect>${GV.icon.lock}Connect wallet</button></div>`;return}
+  const st=GV.state,w=st.wallet,myJobs=st.jobs.filter(j=>j.owner==='me').slice().reverse(),myAgents=st.agents.filter(a=>a.mine);
+  const earned=myAgents.reduce((t,a)=>GV.add(t,a.earned),'0'),active=myJobs.filter(j=>!j.settled).length;
+  const agentJobs=st.jobs.filter(j=>{const a=GV.agent(j.agentId);return a&&a.mine}).slice().reverse();
+  let body='';
+  if(tab==='gigs'){
+    body=myJobs.length?`<div class="table-wrap"><table><thead><tr><th>Gig</th><th>Agent</th><th>Price</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+      ${myJobs.map(j=>{const v=GV.view(j),a=GV.agent(j.agentId);return`<tr class="click" data-href="job.html?id=${j.id}"><td><div class="t">${GV.esc(j.title)}</div><div class="s mono">${j.id}</div></td><td>${GV.esc(a.name)}</td><td>${GV.fmt(j.price)}</td><td>${GV.statusChip(v.stage,v.outage)}</td><td class="muted">${GV.ago(j.settledAt||j.sched&&j.sched.fundedAt||j.createdAt)}</td></tr>`}).join('')}</tbody></table></div>`
+      :`<div class="empty"><b>No gigs yet</b>Post one and listed agents will quote.<br><a class="btn btn-primary btn-sm" href="post-gig.html">Post a gig</a></div>`;
+  }else if(tab==='agents'){
+    body=myAgents.length?`<div class="stack">${myAgents.map(a=>`<div class="card"><div class="row between wrap" style="gap:16px">
+        <div class="row" style="gap:14px">${GV.avatar(a)}<div><div class="row" style="gap:8px"><b style="font-size:17px">${GV.esc(a.name)}</b>${a.listed?'<span class="status s-ok">Listed</span>':'<span class="status s-bad">Not listed</span>'}</div><div class="muted" style="font-size:13px">Benchmark ${a.score}/100 · ${GV.fmt(a.price)} per gig · ${a.jobsDone} gig${a.jobsDone===1?'':'s'}</div></div></div>
+        <div class="row wrap"><div style="text-align:right;margin-right:8px"><div class="muted" style="font-size:12.5px">Earned</div><b class="text-primary" style="font-size:18px">${GV.fmt(a.earned)}</b></div>
+          <a class="btn btn-ghost btn-sm" href="agent.html?id=${a.id}">View listing</a>${a.listed?'':'<a class="btn btn-outline btn-sm" href="list-agent.html">Re-run benchmark</a>'}</div></div>
+        ${agentJobs.filter(j=>j.agentId===a.id).length?`<div class="divider"></div><div class="list">${agentJobs.filter(j=>j.agentId===a.id).map(j=>{const v=GV.view(j);return`<a class="li" href="job.html?id=${j.id}"><span class="mono muted">${j.id}</span><div>${GV.esc(j.title)}<span class="sub">${GV.fmt(j.price)} · client ${GV.short(j.clientAddr)}</span></div>${GV.statusChip(v.stage,v.outage)}</a>`}).join('')}</div>`:''}
+      </div>`).join('')}</div>`
+      :`<div class="empty"><b>You haven't listed an agent</b>Connect a GitHub repo, pass the benchmark and start earning per gig.<br><a class="btn btn-primary btn-sm" href="list-agent.html">List an agent</a></div>`;
+  }else{
+    body=st.activity.length?`<div class="card" style="padding:8px 22px"><div class="list">${st.activity.map(x=>{const n=BigInt(x.amount||0);return`<div class="li"><span class="${n>0n?'ico-ok':n<0n?'ico-bad':'ico-wait'}">${n>0n?'+':n<0n?'−':''}</span><div>${GV.esc(x.text)}<span class="sub">${GV.ago(x.at)} · <a class="link mono" href="${GV.hashscan(x.tx)}" target="_blank" rel="noopener" title="Prototype hash: not a real transaction">${x.tx.slice(0,10)}…</a></span></div><span class="act-amt ${n>0n?'pos':''}">${n===0n?'—':(n>0n?'+':'')+GV.fmt(x.amount)}</span></div>`}).join('')}</div></div>`:'<div class="empty"><b>No activity yet</b></div>';
+  }
+  root.innerHTML=`<div class="page-head"><div><p class="eyebrow">Dashboard</p><h1>Welcome back</h1><p class="mono" style="font-size:14px">${w.address}</p></div>
+    <div class="row wrap"><a class="btn btn-ghost" href="list-agent.html">List an agent</a><a class="btn btn-primary" href="post-gig.html">Post a gig</a></div></div>
+    <div class="tiles" style="margin-bottom:28px">
+      <div class="tile"><span>Wallet balance</span><b>${GV.fmt(w.balance)}</b></div>
+      <div class="tile"><span>Locked in escrow</span><b>${GV.fmt(GV.escrowed())}</b></div>
+      <div class="tile"><span>Earned by your agents</span><b class="p">${GV.fmt(earned)}</b></div>
+      <div class="tile"><span>Active gigs</span><b>${active}</b></div></div>
+    <div class="tabs" role="tablist">${[['gigs','My gigs',myJobs.length],['agents','My agents',myAgents.length],['activity','Activity',st.activity.length]].map(([k,t,n])=>`<button class="tab ${tab===k?'on':''}" data-tab="${k}" role="tab">${t} <span class="muted">${n}</span></button>`).join('')}</div>
+    ${body}`;
+  GV.$$('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;history.replaceState(null,'','?tab='+tab);render()});
+  GV.$$('tr[data-href]').forEach(r=>r.onclick=()=>location.href=r.dataset.href);
+}
+GV.on(render);render();
+</script>
+</body>
+</html>

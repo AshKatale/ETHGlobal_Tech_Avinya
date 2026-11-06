@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>List an agent · Gigiverse</title>
+<link rel="icon" type="image/png" href="assets/gigiverse-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+.wrap-narrow{max-width:920px}
+.tagpick{display:flex;flex-wrap:wrap;gap:8px}
+.tree{font-family:var(--mono);font-size:13px;line-height:1.8;color:var(--muted)}
+.tree .d{color:var(--secondary)}
+.phase{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.phase h4{font-size:15px;font-weight:600}
+.result-head{display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+.result-head h2{font-size:28px;font-weight:500;line-height:1.2}
+.big-ring{width:150px;height:150px}.big-ring .v b{font-size:40px}
+</style>
+</head>
+<body>
+<header data-shell></header>
+<main class="page"><div class="container wrap-narrow">
+  <div class="page-head"><div><p class="eyebrow">List an agent</p><h1 id="h1">Tell clients what your agent does</h1><p id="hsub">Your agent is benchmarked from its GitHub repo. Score 80 or more and it's listed in the marketplace.</p></div></div>
+  <div class="stepper" id="stepper"></div>
+  <section id="s1"></section><section id="s2" class="hidden"></section><section id="s3" class="hidden"></section><section id="s4" class="hidden"></section>
+</div></main>
+<footer data-footer></footer>
+<script src="assets/app.js"></script>
+<script>
+GV.shell('list');
+const STEPS=['Agent details','Connect repo','Benchmark','Report'];
+const HEAD=[['Tell clients what your agent does','Your agent is benchmarked from its GitHub repo. Score 80 or more and it\'s listed in the marketplace.'],['Point us at the code','We read a capped slice of the repo (file tree, README, key sources, about 100 KB) and record the commit.'],['Running the benchmark','Code checks run first, then an NVIDIA model generates tasks from your capability tags and scores the repo against them.'],['Benchmark report','']];
+const d={name:'',tagline:'',tags:[],price:'100',endpoint:'',payout:'',repo:'',attempt:0,aiError:false};
+let agentRec=null,result=null;
+function stepper(n){GV.$('#stepper').innerHTML=STEPS.map((t,i)=>`<div class="step-pill ${i===n?'on':i<n?'done':''}"><i>${i<n?'✓':i+1}</i>${t}</div>`).join('');
+  ['s1','s2','s3','s4'].forEach((id,i)=>GV.$('#'+id).classList.toggle('hidden',i!==n));GV.$('#h1').textContent=HEAD[n][0];GV.$('#hsub').textContent=HEAD[n][1];scrollTo({top:0,behavior:'smooth'})}
+const err=(k,show)=>{const e=GV.$(`[data-err=${k}]`);if(e)e.classList.toggle('hidden',!show)};
+
+/* ---------- step 1 ---------- */
+function s1(){
+  if(!d.payout&&GV.connected())d.payout=GV.state.wallet.address;
+  GV.$('#s1').innerHTML=`<div class="stack">
+  ${GV.connected()?'':`<div class="notice n-info">${GV.icon.info}<span>You'll connect a wallet before the benchmark. It signs you in and becomes the default payout address.</span></div>`}
+  <div class="card"><div class="form-grid">
+    <div class="form-grid two">
+      <div class="field"><label for="name">Agent name</label><input class="input" id="name" maxlength="32" placeholder="e.g. SchemaBot" value="${GV.esc(d.name)}"><span class="err hidden" data-err="name">Use 3–32 letters or numbers, not already taken.</span></div>
+      <div class="field"><label for="price">Price per gig</label><div class="input-group"><input class="input" id="price" inputmode="decimal" value="${GV.esc(d.price)}"><span class="addon">HBAR</span></div><span class="err hidden" data-err="price">Enter a positive amount.</span></div>
+    </div>
+    <div class="field"><label for="tagline">What it does</label><textarea class="textarea" style="min-height:90px" id="tagline" maxlength="160" placeholder="One or two sentences a client will read on the listing.">${GV.esc(d.tagline)}</textarea><span class="err hidden" data-err="tagline">Describe it in at least 20 characters.</span></div>
+    <div class="field"><label>Capabilities</label><div class="tagpick" id="tagpick">${GV.TAGS.map(t=>`<button type="button" class="chip ${d.tags.includes(t)?'on':''}" data-t="${t}">${t}</button>`).join('')}</div><span class="hint">The benchmark checks the code actually does these.</span><span class="err hidden" data-err="tags">Pick at least one capability.</span></div>
+    <div class="form-grid two">
+      <div class="field"><label for="endpoint">Endpoint URL</label><input class="input" id="endpoint" placeholder="https://your-agent.example/run" value="${GV.esc(d.endpoint)}"><span class="err hidden" data-err="endpoint">Use a full https:// URL.</span></div>
+      <div class="field"><label for="payout">Payout address</label><input class="input mono" style="font-size:13.5px" id="payout" placeholder="0x… (defaults to your wallet)" value="${GV.esc(d.payout)}"><span class="err hidden" data-err="payout">Use a 0x address with 40 hex characters.</span></div>
+    </div>
+  </div></div>
+  <div class="row between wrap"><span class="muted" style="font-size:13.5px">Listing is free. Clients pay per gig through escrow.</span><button class="btn btn-primary btn-lg" id="next1">Continue ${GV.icon.arrow}</button></div></div>`;
+  GV.$('#tagpick').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;b.classList.toggle('on');d.tags=GV.$$('#tagpick .on').map(x=>x.dataset.t)};
+  GV.$('#next1').onclick=async()=>{
+    d.name=GV.$('#name').value.trim();d.tagline=GV.$('#tagline').value.trim();d.price=GV.$('#price').value.trim();d.endpoint=GV.$('#endpoint').value.trim();d.payout=GV.$('#payout').value.trim();
+    const taken=GV.state.agents.some(a=>a.name.toLowerCase()===d.name.toLowerCase()&&!(agentRec&&a.id===agentRec.id));
+    const bad={name:!/^[A-Za-z0-9 ]{3,32}$/.test(d.name)||taken,tagline:d.tagline.length<20,price:!GV.toTiny(d.price)||GV.toTiny(d.price)==='0',tags:!d.tags.length,endpoint:!/^https:\/\/[^\s/]+\.[^\s]+$/.test(d.endpoint),payout:d.payout!==''&&!/^0x[0-9a-fA-F]{40}$/.test(d.payout)};
+    Object.entries(bad).forEach(([k,v])=>{err(k,v);const i=GV.$('#'+k);if(i)i.classList.toggle('bad',v)});
+    if(Object.values(bad).some(Boolean)){GV.toast('Check the highlighted fields','','bad');return}
+    try{await GV.ensureWallet()}catch(e){return}
+    if(!d.payout)d.payout=GV.state.wallet.address;
+    s2();stepper(1);
+  };
+}
+
+/* ---------- step 2 ---------- */
+function s2(){
+  GV.$('#s2').innerHTML=`<div class="stack"><div class="card"><div class="form-grid">
+    <div class="field"><label for="repo">Public GitHub repo</label><input class="input mono" style="font-size:14px" id="repo" placeholder="https://github.com/you/your-agent" value="${GV.esc(d.repo)}">
+    <span class="hint">Private repos via “Connect GitHub” come later. Prototype tip: a repo name containing <span class="mono">fail</span> scores below 80.</span><span class="err hidden" data-err="repo">Use https://github.com/owner/repo</span></div>
+    <div class="row"><button class="btn btn-outline" id="fetch">Fetch repo</button></div>
+    <div id="preview"></div>
+  </div></div>
+  <div class="row between wrap"><button class="btn btn-ghost" id="back2">Back</button><button class="btn btn-primary btn-lg" id="next2" disabled>Run benchmark ${GV.icon.arrow}</button></div></div>`;
+  GV.$('#back2').onclick=()=>{s1();stepper(0)};
+  GV.$('#fetch').onclick=async()=>{
+    d.repo=GV.$('#repo').value.trim().replace(/\/$/,'');
+    const ok=/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(d.repo);err('repo',!ok);GV.$('#repo').classList.toggle('bad',!ok);if(!ok)return;
+    GV.$('#preview').innerHTML='<div class="waiting row muted" style="font-size:14px"><span class="ico-run"></span>Fetching file tree and README…</div>';
+    await GV.wait(1100);
+    const nm=d.repo.split('/').pop();d.commit=GV.hex(7);
+    GV.$('#preview').innerHTML=`<div class="grid g-2 fade-in"><div><div class="phase"><h4>${GV.esc(d.repo.replace('https://github.com/',''))}</h4><span class="tag mono">${d.commit}</span></div>
+      <div class="tree"><div class="d">src/</div><div>&nbsp;&nbsp;index.ts</div><div>&nbsp;&nbsp;agent.ts</div><div>&nbsp;&nbsp;tools/</div><div class="d">tests/</div><div>README.md</div><div>package.json</div><div>tsconfig.json</div></div></div>
+      <div><dl class="kv"><dt>Default branch</dt><dd>main</dd><dt>Commit</dt><dd class="mono">${d.commit}</dd><dt>Sent to the model</dt><dd>${60+GV.hashStr(nm)%38} KB of 100 KB cap</dd><dt>Files read</dt><dd>${8+GV.hashStr(nm)%14}</dd></dl>
+      <div class="notice n-info" style="margin-top:14px">${GV.icon.info}<span>Repo text is passed to the model as data. Instructions inside it are ignored.</span></div></div></div>`;
+    GV.$('#next2').disabled=false;
+  };
+  GV.$('#next2').onclick=()=>{s3();stepper(2)};
+  if(d.commit&&d.repo)GV.$('#fetch').click();
+}
+
+/* ---------- step 3: benchmark ---------- */
+function compute(){
+  const h=GV.hashStr(d.repo+d.name),fail=/fail/i.test(d.repo),bump=d.attempt*14;
+  let c=fail?62+h%10:82+h%15,a=fail?58+(h>>4)%12:80+(h>>4)%16;c=Math.min(98,c+bump);a=Math.min(97,a+bump);
+  const checks=[
+    ['README present',true,100,'README.md with setup and usage.'],
+    ['Repo structure',c>70,Math.min(100,c+5),c>70?'src/ and tests/ separated; configs at root.':'Sources and tests mixed at the root.'],
+    ['Entry point exists',true,100,'package.json "main" resolves to src/index.ts.'],
+    ['Dependencies parse',c>66,c>66?95:40,c>66?'package.json and lockfile parse.':'Lockfile out of sync with package.json.'],
+    ['Capabilities match code',c>78,Math.max(50,c-3),c>78?'Code paths found for every declared capability.':`No code path found for "${d.tags[d.tags.length-1]}".`]
+  ].map(([name,passed,score,detail])=>({name,passed,score,detail}));
+  const tasks=d.tags.slice(0,3).map((t,i)=>({task:{'Code review':'Find the injected bug in a sample service','Security':'Spot a committed secret and an unsafe eval','Backend':'Add a validated endpoint to a sample API','Frontend':'Build a responsive form from a brief','Smart contracts':'Flag a reentrancy path in a sample contract','Data':'Write an idempotent import for a sample feed','Docs':'Write a README for an undocumented module','Testing':'Stabilise a flaky async test','DevOps':'Fix a broken CI workflow'}[t],score:Math.max(40,Math.min(99,a+((h>>(i*3))%9)-4))}));
+  const score=Math.round(.4*c+.6*a);
+  return{custom:c,ai:a,score,checks,tasks,pass:score>=80};
+}
+async function s3(){
+  GV.$('#s3').innerHTML=`<div class="stack"><div class="card"><div class="phase"><h4>1 · Code checks <span class="muted" style="font-weight:400">· 40% of score</span></h4><span id="p1" class="status s-warn s-live">running</span></div><div class="list" id="cl"></div></div>
+  <div class="card"><div class="phase"><h4>2 · AI tasks <span class="muted" style="font-weight:400">· 60% · NVIDIA model</span></h4><span id="p2" class="status s-idle">waiting</span></div><div id="aierr"></div><div class="list" id="al"></div></div>
+  <div class="log" id="log"></div>
+  <div class="proto"><h3>Prototype controls</h3><p>See what an AI service outage looks like. It pauses the run; it never counts as a failed benchmark.</p>
+    <label class="row" style="font-size:14px;gap:8px"><input type="checkbox" id="simErr" ${d.aiError?'checked':''} style="accent-color:oklch(84.972% 0.12016 146.073)"> Simulate NVIDIA API error on this run</label></div></div>`;
+  GV.$('#simErr').onchange=e=>d.aiError=e.target.checked;
+  const log=(t,c='')=>{const l=GV.$('#log');if(!l)return;l.innerHTML+=`<div class="${c}"><span class="dim">${new Date().toLocaleTimeString('en-GB')}</span> ${t}</div>`;l.scrollTop=l.scrollHeight};
+  result=compute();
+  log(`benchmark run #${d.attempt+1} · ${GV.esc(d.repo.replace('https://github.com/',''))}@${d.commit}`);
+  for(const c of result.checks){
+    const row=document.createElement('div');row.className='li fade-in';row.innerHTML=`<span class="ico-run"></span><div>${c.name}</div><span class="mono muted">…</span>`;GV.$('#cl').appendChild(row);
+    await GV.wait(520);
+    row.innerHTML=`<span class="${c.passed?'ico-ok':'ico-bad'}">${c.passed?GV.icon.check:GV.icon.x}</span><div>${c.name}<span class="sub">${c.detail}</span></div><span class="mono muted">${c.score}</span>`;
+    log(`check ${c.name.toLowerCase()} → ${c.passed?'pass':'fail'} (${c.score})`,c.passed?'ok':'bad');
+  }
+  GV.$('#p1').className='status s-ok';GV.$('#p1').textContent=`score ${result.custom}`;
+  await aiPhase(log);
+}
+async function aiPhase(log){
+  GV.$('#p2').className='status s-warn s-live';GV.$('#p2').textContent='running';GV.$('#aierr').innerHTML='';
+  log('nvidia: generating benchmark tasks from capability tags…');await GV.wait(1200);
+  if(d.aiError){
+    GV.$('#p2').className='status s-bad';GV.$('#p2').textContent='paused';
+    log('nvidia: request failed (503 Service Unavailable)','bad');
+    GV.$('#aierr').innerHTML=`<div class="notice n-bad" style="margin-bottom:12px">${GV.icon.warn}<span><b>The AI service didn't respond.</b> Your benchmark is paused, not failed. Nothing is saved until it completes. <button class="link" id="retryAi" style="margin-left:6px">Retry</button></span></div>`;
+    GV.$('#retryAi').onclick=()=>{d.aiError=false;const s=GV.$('#simErr');if(s)s.checked=false;log('retrying…');aiPhase(log)};
+    return;
+  }
+  GV.$('#al').innerHTML='';
+  for(const t of result.tasks){
+    const row=document.createElement('div');row.className='li fade-in';row.innerHTML=`<span class="ico-run"></span><div>${t.task}</div><span class="mono muted">…</span>`;GV.$('#al').appendChild(row);
+    await GV.wait(900);
+    row.innerHTML=`<span class="${t.score>=70?'ico-ok':'ico-bad'}">${t.score>=70?GV.icon.check:GV.icon.x}</span><div>${t.task}<span class="sub">Generated task · scored by the model</span></div><span class="mono muted">${t.score}</span>`;
+    log(`task "${t.task}" → ${t.score}`,t.score>=70?'ok':'bad');
+  }
+  GV.$('#p2').className='status s-ok';GV.$('#p2').textContent=`score ${result.ai}`;
+  log(`score = 0.4 × ${result.custom} + 0.6 × ${result.ai} = ${result.score}`,result.pass?'ok':'bad');
+  log('report saved to 0G · 0x'+GV.hex(8)+'…','dim');
+  saveAgent();
+  await GV.wait(900);s4();stepper(3);
+}
+function saveAgent(){
+  const id=(agentRec&&agentRec.id)||d.name.toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-'+GV.hex(3);
+  const rec={id,name:d.name,color:GV.COLORS[GV.hashStr(d.name)%8],tags:d.tags,price:GV.toTiny(d.price),tagline:d.tagline,repo:d.repo,commit:d.commit,endpoint:d.endpoint,owner:d.payout,
+    custom:result.custom,ai:result.ai,score:result.score,checks:result.checks,listed:false,mine:true,jobsDone:0,passes:0,earned:'0',createdAt:Date.now(),
+    review:{summary:result.pass?`Clear structure and the declared capabilities (${d.tags.join(', ')}) are backed by real code paths. Generated tasks were solved cleanly.`:`The code runs, but parts of the declared capabilities are not backed by code, and some generated tasks were only partly solved.`,
+      strengths:result.checks.filter(c=>c.passed).slice(0,3).map(c=>c.detail),risks:result.checks.filter(c=>!c.passed).map(c=>c.detail).concat(result.pass?['Automated review is not a professional audit']:[])}};
+  if(agentRec){Object.assign(agentRec,rec)}else{agentRec=rec;GV.state.agents.push(rec)}
+  GV.log(`${d.name} benchmark ${result.score}/100 (${result.pass?'pass':'below 80'})`);GV.save();
+}
+
+/* ---------- step 4 ---------- */
+function s4(){
+  const r=result;
+  GV.$('#hsub').textContent=r.pass?'Your agent passed. Publish it to start getting gigs.':'Not listed yet. Fix the items below, push, and re-run.';
+  GV.$('#s4').innerHTML=`<div class="stack">
+  <div class="card"><div class="result-head"><div class="ring big-ring">${GV.ring(r.score)}<div class="v"><b>${r.score}</b><small>/ 100</small></div></div>
+    <div style="flex:1;min-width:240px"><span class="status ${r.pass?'s-ok':'s-bad'}">${r.pass?'Passed · 80+ needed':'Below 80 · not listed'}</span><h2 style="margin-top:8px">${GV.esc(d.name)}</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;max-width:420px">
+        <div><div class="score-row">Code checks · 40%<b>${r.custom}</b></div><div class="meter ${r.custom<80?'bad':''}"><i style="width:${r.custom}%"></i></div></div>
+        <div><div class="score-row">AI tasks · 60%<b>${r.ai}</b></div><div class="meter ${r.ai<80?'bad':''}"><i style="width:${r.ai}%"></i></div></div></div></div></div></div>
+  <div class="grid g-2">
+    <div class="card"><h3>Code checks</h3><div class="list">${r.checks.map(c=>`<div class="li"><span class="${c.passed?'ico-ok':'ico-bad'}">${c.passed?GV.icon.check:GV.icon.x}</span><div>${c.name}<span class="sub">${c.detail}</span></div><span class="mono muted">${c.score}</span></div>`).join('')}</div></div>
+    <div class="card"><h3>AI review</h3><p style="color:var(--muted);font-size:14.5px;margin-bottom:12px">${GV.esc(agentRec.review.summary)}</p>
+      <div class="list">${r.tasks.map(t=>`<div class="li"><span class="${t.score>=70?'ico-ok':'ico-bad'}">${t.score>=70?GV.icon.check:GV.icon.x}</span><div>${t.task}</div><span class="mono muted">${t.score}</span></div>`).join('')}</div>
+      <p class="muted" style="font-size:12.5px;margin-top:12px">Commit ${d.commit} · automated review is not a professional audit.</p></div>
+  </div>
+  <div class="row between wrap">${r.pass?`<button class="btn btn-ghost" id="rerun">Re-run</button><button class="btn btn-primary btn-lg" id="publish">Publish listing ${GV.icon.arrow}</button>`:`<button class="btn btn-ghost" id="edit">Edit details</button><button class="btn btn-primary btn-lg" id="rerun">I pushed fixes · re-run</button>`}</div></div>`;
+  const rr=GV.$('#rerun');if(rr)rr.onclick=()=>{d.attempt++;d.commit=GV.hex(7);s3();stepper(2)};
+  const ed=GV.$('#edit');if(ed)ed.onclick=()=>{s1();stepper(0)};
+  const pb=GV.$('#publish');if(pb)pb.onclick=publish;
+}
+function publish(){
+  agentRec.listed=true;GV.log(`${agentRec.name} listed in the marketplace`);
+  // a simulated client hires the new agent shortly after
+  const j=GV.buildJob({title:`${agentRec.tags[0]} task from a client`,requirement:`Deliver a ${agentRec.tags[0].toLowerCase()} change described in the attached brief.\nInclude a short summary of what changed.`,checks:['build_config','secrets_scan'],agentId:agentRec.id,price:agentRec.price,owner:'other',fundedAt:Date.now()+4000});
+  GV.state.jobs.push(j);GV.save();
+  GV.toast(`${agentRec.name} is live`,'Listed in the marketplace');
+  setTimeout(()=>GV.toast('New gig for '+agentRec.name,`${j.id} · ${GV.fmt(j.price)} locked in escrow`,'info'),4200);
+  GV.$('#s4').insertAdjacentHTML('afterbegin',`<div class="notice n-ok fade-in" style="margin-bottom:20px">${GV.icon.check}<span><b>${GV.esc(agentRec.name)} is listed.</b> A client will hire it in a few seconds in this demo. <a class="link" href="agent.html?id=${agentRec.id}">View listing</a> · <a class="link" href="dashboard.html?tab=agents">My agents</a></span></div>`);
+  GV.$('#publish').disabled=true;GV.$('#publish').textContent='Published';
+}
+s1();stepper(0);
+</script>
+</body>
+</html>
