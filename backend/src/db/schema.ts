@@ -126,6 +126,8 @@ export const verdicts = pgTable('verdicts', {
   result: text('result').notNull(), // PASS | FAIL
   verifierSig: text('verifier_sig'),
   nonce: bigint('nonce', { mode: 'bigint' }),
+  settleTxHash: text('settle_tx_hash'),
+  settleError: text('settle_error'),
   createdAt: createdAt(),
 });
 
