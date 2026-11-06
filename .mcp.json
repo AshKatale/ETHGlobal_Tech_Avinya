@@ -1,0 +1,43 @@
+{
+  "mcpServers": {
+    "hedera-docs": {
+      "type": "http",
+      "url": "https://docs.hedera.com/mcp"
+    },
+    "hedera-testnet": {
+      "type": "http",
+      "url": "https://agentic-testnet-mcp.hedera.com/mcp"
+    },
+    "chrome-devtools": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--isolated",
+        "--no-usage-statistics",
+        "--no-performance-crux"
+      ]
+    },
+    "0g-docs": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "mcpdoc",
+        "--with",
+        "mcp<2",
+        "mcpdoc",
+        "--urls",
+        "0GDocs:https://docs.0g.ai/llms.txt",
+        "0GBuild:https://build.0g.ai/llms.txt",
+        "--allowed-domains",
+        "docs.0g.ai",
+        "build.0g.ai",
+        "0g.ai",
+        "--transport",
+        "stdio"
+      ]
+    }
+  }
+}
