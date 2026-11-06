@@ -6,7 +6,7 @@ import { assertSafeUrl, isBlockedAddress, safeFetch, SsrfError } from './ssrf.js
 const fake = (addrs: string[]) => async () => addrs;
 
 describe('isBlockedAddress', () => {
-  it.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.1', '192.168.1.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '224.0.0.1', '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', '::ffff:7f00:1', '::ffff:169.254.169.254'])(
+  it.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.1', '192.168.1.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '224.0.0.1', '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', '::ffff:7f00:1', '::ffff:169.254.169.254', '64:ff9b::7f00:1', '2002:7f00:1::1'])(
     'blocks %s', (ip) => expect(isBlockedAddress(ip, false)).toBe(true));
   it.each(['8.8.8.8', '1.1.1.1', '172.32.0.1', '2606:4700:4700::1111'])('allows public %s', (ip) => expect(isBlockedAddress(ip, false)).toBe(false));
   it('allows loopback/private only with allowLocal, never link-local', () => {
@@ -73,5 +73,17 @@ describe('safeFetch limits (allowLocal for a loopback test server)', () => {
   it('times out', async () => {
     const { srv, url } = await serve(() => { /* never answers */ });
     try { await expect(safeFetch(url, {}, { allowLocal: true, timeoutMs: 150 })).rejects.toThrow(); } finally { srv.closeAllConnections(); srv.close(); }
+  });
+});
+
+describe('safeFetch DNS pinning', () => {
+  it('refuses a hostname that resolves to loopback at connect time (localhost, default config)', async () => {
+    const srv = createServer((_q, r) => r.end('x'));
+    await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok));
+    const port = (srv.address() as AddressInfo).port;
+    try {
+      // allowLocal=false via opts: the connect-time lookup itself must reject, even if the first check were bypassed
+      await expect(safeFetch(`http://localhost:${port}/`, {}, { allowLocal: false })).rejects.toThrow(SsrfError);
+    } finally { srv.close(); }
   });
 });

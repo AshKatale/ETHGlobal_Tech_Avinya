@@ -2,6 +2,8 @@
 // http/https only; the host is resolved and refused if ANY address is private, loopback, link-local or otherwise internal,
 // unless ALLOW_LOCAL_AGENTS=true (demo agents on localhost). Redirects are never followed. Timeout and response size cap enforced.
 import { lookup } from 'node:dns/promises';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { env } from '../env.js';
 
@@ -41,6 +43,8 @@ export function isBlockedAddress(ip: string, allowLocal = env.ALLOW_LOCAL_AGENTS
     if (/^f[cd]/.test(lower)) return !allowLocal; // unique local fc00::/7
     if (/^fe[89ab]/.test(lower)) return true; // link-local fe80::/10
     if (/^ff/.test(lower)) return true; // multicast
+    if (lower.startsWith('64:ff9b:')) return true; // NAT64 can reach IPv4 internals
+    if (lower.startsWith('2002:')) return true; // 6to4
     return false;
   }
   return true; // not an IP at all
@@ -70,33 +74,53 @@ export async function assertSafeUrl(raw: string, resolve: Resolver = defaultReso
 
 export type SafeResponse = { status: number; ok: boolean; text: string };
 
-/** fetch() for lister-supplied URLs: guarded, no redirects, timeout, capped body. */
+/**
+ * fetch() for lister-supplied URLs: guarded, no redirects, timeout, capped body.
+ * Uses node:http(s) with a custom `lookup` that validates the address at connect time and connects to exactly
+ * that address, so a DNS-rebinding answer cannot differ between check and use.
+ */
 export async function safeFetch(
   raw: string,
   init: { method?: string; headers?: Record<string, string>; body?: string } = {},
   opts: { timeoutMs?: number; maxBytes?: number; allowLocal?: boolean } = {},
 ): Promise<SafeResponse> {
-  const url = await assertSafeUrl(raw, defaultResolver, opts.allowLocal ?? env.ALLOW_LOCAL_AGENTS === 'true');
+  const allowLocal = opts.allowLocal ?? env.ALLOW_LOCAL_AGENTS === 'true';
+  const url = await assertSafeUrl(raw, defaultResolver, allowLocal);
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
-  const res = await fetch(url, {
-    ...init,
-    redirect: 'manual',
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000),
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const doRequest = url.protocol === 'https:' ? httpsRequest : httpRequest;
+
+  const pinnedLookup = ((hostname: string, options: { all?: boolean }, cb: (...a: unknown[]) => void) => {
+    lookup(hostname, { all: true, verbatim: true }).then((rows) => {
+      const bad = rows.find((r) => isBlockedAddress(r.address, allowLocal));
+      if (bad || rows.length === 0) return cb(new SsrfError(`Blocked address ${bad?.address ?? '(none)'} for host ${hostname}`));
+      if (options.all) return cb(null, rows);
+      cb(null, rows[0].address, rows[0].family);
+    }, (e) => cb(e));
+  }) as never;
+
+  return new Promise<SafeResponse>((resolve, reject) => {
+    const req = doRequest(url, { method: init.method ?? 'GET', headers: init.headers, lookup: pinnedLookup, timeout: timeoutMs }, (res) => {
+      const status = res.statusCode ?? 0;
+      if (status >= 300 && status < 400) { res.destroy(); return reject(new SsrfError(`Refusing to follow redirect (${status})`)); }
+      const declared = Number(res.headers['content-length'] ?? 0);
+      if (declared > maxBytes) { res.destroy(); return reject(new SsrfError(`Response too large (${declared} bytes)`)); }
+      const chunks: Buffer[] = [];
+      let total = 0;
+      res.on('data', (c: Buffer) => {
+        total += c.length;
+        if (total > maxBytes) { res.destroy(); reject(new SsrfError(`Response exceeded ${maxBytes} bytes`)); return; }
+        chunks.push(c);
+      });
+      res.on('end', () => resolve({ status, ok: status >= 200 && status < 300, text: Buffer.concat(chunks).toString('utf8') }));
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error(`Timed out after ${timeoutMs} ms`)));
+    req.on('error', reject);
+    // Hard wall-clock cap in addition to the socket idle timeout.
+    const wall = setTimeout(() => req.destroy(new Error(`Timed out after ${timeoutMs} ms`)), timeoutMs);
+    req.on('close', () => clearTimeout(wall));
+    if (init.body !== undefined) req.write(init.body);
+    req.end();
   });
-  if (res.status >= 300 && res.status < 400) throw new SsrfError(`Refusing to follow redirect (${res.status})`);
-  const declared = Number(res.headers.get('content-length') ?? 0);
-  if (declared > maxBytes) { void res.body?.cancel(); throw new SsrfError(`Response too large (${declared} bytes)`); }
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  if (res.body) {
-    const reader = res.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) { void reader.cancel(); throw new SsrfError(`Response exceeded ${maxBytes} bytes`); }
-      chunks.push(value);
-    }
-  }
-  return { status: res.status, ok: res.ok, text: Buffer.concat(chunks).toString('utf8') };
 }

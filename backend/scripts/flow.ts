@@ -2,7 +2,6 @@
 // Usage: start the server (npm run dev), then: REPO_URL=https://github.com/owner/repo npm run flow
 // The relayer account funds a fresh client wallet with a little HBAR; the client wallet funds the escrow.
 import 'dotenv/config';
-import http from 'node:http';
 import { createServer } from 'node:http';
 import { createWalletClient, formatUnits, http as viemHttp, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
@@ -14,7 +13,6 @@ const API = process.env.API_URL ?? 'http://localhost:4000';
 const REPO_URL = process.env.REPO_URL;
 if (!REPO_URL) throw new Error('Set REPO_URL to a public GitHub repo to benchmark');
 if (!process.env.RELAYER_PRIVATE_KEY) throw new Error('RELAYER_PRIVATE_KEY missing in .env');
-void http;
 
 const PRICE = 100_000_000n; // 1 HBAR in tinybar
 const CALLEE_PRICE = 20_000_000n; // 0.2 HBAR; the 30% A2A cap on a 1 HBAR job is 0.3 HBAR

@@ -94,7 +94,8 @@ export async function a2aRoutes(app: FastifyInstance) {
       const { sig, nonce } = await signDelegation(escrow, call.agreementId, subAgent, amount);
       payTx = (await delegateOnChain(escrow, subAgent, amount, nonce, sig)).hash;
     } catch (e) {
-      await db.update(schema.a2aCalls).set({ status: 'failed', blockedReason: `Payment failed: ${(e as Error).message}` }).where(eq(schema.a2aCalls.id, call.id));
+      // 'failed' here means no payment is known to have landed. If the tx did land, the Delegated indexer heals the row to 'paid'.
+      await db.update(schema.a2aCalls).set({ status: 'failed', blockedReason: 'Payment failed' }).where(eq(schema.a2aCalls.id, call.id));
       return reply.code(502).send({ error: `Payment failed: ${(e as Error).message}` });
     }
     // The Delegated indexer may have recorded this tx already; the unique index on a2a payments makes this idempotent.
@@ -110,14 +111,16 @@ export async function a2aRoutes(app: FastifyInstance) {
         },
         { timeoutMs: 90_000, maxBytes: 1_000_000 },
       );
-      if (!res.ok) throw new Error(`callee responded ${res.status}: ${res.text.slice(0, 200)}`);
+      if (!res.ok) throw new Error(`callee responded ${res.status}`);
       await db.update(schema.a2aCalls).set({ status: 'done' }).where(eq(schema.a2aCalls.id, call.id));
       let output: unknown = res.text;
       try { output = JSON.parse(res.text); } catch { /* keep text */ }
       return { status: 'done', output };
     } catch (e) {
-      await db.update(schema.a2aCalls).set({ status: 'failed', blockedReason: (e as Error).message }).where(eq(schema.a2aCalls.id, call.id));
-      return reply.code(502).send({ error: `Callee failed: ${(e as Error).message}` });
+      // The payment already went out, so the row stays 'paid' and keeps counting against the cap (never overwritten with 'failed').
+      // Only a generic reason is stored: GET /agreements/:id/a2a is public and must not echo upstream text.
+      await db.update(schema.a2aCalls).set({ blockedReason: 'Callee failed after payment' }).where(eq(schema.a2aCalls.id, call.id));
+      return reply.code(502).send({ error: 'Callee failed after payment' });
     }
   });
 

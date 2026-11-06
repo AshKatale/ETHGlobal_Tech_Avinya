@@ -98,7 +98,7 @@ export async function dispatchAgreement(agreementId: string, opts: { fetcher?: F
             .where(and(eq(schema.agreements.id, agreementId), isNull(schema.agreements.dispatchedAt)));
           return { ok: true };
         }
-        lastError = `agent responded ${res.status}: ${res.text.slice(0, 150)}`;
+        lastError = `agent responded ${res.status}`; // body deliberately not stored: it is lister-controlled text
         if (res.status < 500) break; // 4xx is final
       } catch (e) {
         lastError = (e as Error).message;

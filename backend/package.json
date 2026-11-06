@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "flow": "tsx scripts/flow.ts",
     "bench-check": "tsx scripts/bench-check.ts",
+    "seed": "tsx scripts/seed.ts",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"

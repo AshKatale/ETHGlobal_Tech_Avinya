@@ -1,7 +1,7 @@
 # AgentForge REST API contract
 
 Owner: backend-engineer. Consumers: frontend, demo-agents, qa. Base URL in dev: `http://localhost:4000`.
-Source of truth is `backend/src/routes/`. Items marked **[planned]** are being built in Wave A and not yet live; everything else exists today.
+Source of truth is `backend/src/routes/`. Everything below is implemented unless marked **[planned]**. Last updated after the Wave A backend work (dispatch, quote solicitation, SSRF guard, A2A lock, settle auth).
 
 ## Conventions
 - JSON in and out. A POST may send an empty body with `content-type: application/json`.
@@ -46,7 +46,7 @@ Agent object (never contains the key hash):
 Auth user. Body:
 `{ name (1-100), description (1-2000), capabilities (1-10 strings, each 1-40), endpointUrl? (url), payoutAddress? (0x, default = caller), hederaAccountId? ("0.0.123"), priceTinybar, repoUrl? (url) }`
 `201 { "agent": <Agent>, "apiKey": "afk_..." }`. The key is shown once.
-**[planned]** `endpointUrl` is validated by the SSRF guard when called (http/https only; private/loopback/link-local refused unless `ALLOW_LOCAL_AGENTS=true`).
+`endpointUrl` is not validated at registration; every outbound call to it goes through the SSRF guard (http/https only, host resolved, private/loopback/link-local refused, no redirects, timeout, 1 MB cap). Loopback and private hosts are allowed only when the backend runs with `ALLOW_LOCAL_AGENTS=true` (needed for demo agents on localhost). Link-local (169.254.x.x) is always refused.
 
 ### GET /agents
 Auth none. Query `capability?`, `status?` (default `listed`; `all` for everything). `200 Agent[]`, newest first.
@@ -75,7 +75,7 @@ Checks: `build_config | lint_rules | secrets_scan | dependency_check | security_
 
 ### POST /requests
 Auth user. Body `{ title (1-200), requirements (10-10000), checksRequested? (default []), budgetTinybar, deadlineAt? (ISO datetime) }`. `201 Request`.
-**[planned]** After creation the backend asks each listed agent with an `endpointUrl` for a quote in the background (`POST {endpointUrl}/quote`); valid answers appear as quotes with status `open`. Poll `GET /requests/:id`.
+After creation the backend asks each listed agent that has an `endpointUrl` for a quote in the background (`POST {endpointUrl}/quote`, 15 s timeout). Valid answers appear as quotes (status `open`, at most one per agent per request); agents that fail or answer badly are ignored. The response does not wait for this: poll `GET /requests/:id`.
 
 ### GET /requests
 Query `status?`. `200 Request[]`, newest first.
@@ -97,7 +97,8 @@ Auth user (the request's client). No body. Creates the agreement, rejects other 
 Errors: `404`, `403` not your request, `409` already decided.
 
 ## Agreements
-Agreement: `{ id, requestId, quoteId, clientUserId, agentId, priceTinybar, deadlineAt|null, escrowAddress|null, status: "agreed"|"funded"|"submitted"|"verifying"|"released"|"refunded", createdAt }`.
+Agreement: `{ id, requestId, quoteId, clientUserId, agentId, priceTinybar, deadlineAt|null, escrowAddress|null, status: "agreed"|"funded"|"submitted"|"verifying"|"released"|"refunded", dispatchedAt|null, dispatchError|null, createdAt }`.
+`dispatchedAt` is set when the agent's `POST /tasks` answered 2xx after the escrow was indexed as `funded`; `dispatchError` holds the last failure (new fields).
 Money states (`funded`, `released`, `refunded`) are set only by the indexer from on-chain events. The client funds by calling `JobEscrow.fund()` from their wallet (not via this API).
 
 ### GET /agreements/:id
@@ -117,17 +118,21 @@ Auth `x-agent-key` (the agent on the agreement). Body `{ content (1-200000), kin
 `202 { status: "submitted", verification: "started" }`. `403` not your agreement, `404`.
 `409` unless status is exactly `funded` (**changed**: previously a resubmit during `verifying` was accepted).
 
+### POST /agreements/:id/dispatch
+Auth user (the client or the agent's owner). Retries the `POST /tasks` callback after a stored `dispatchError`. `202 { status: "dispatching" }`. `403`, `404`, `409` if not `funded` or already dispatched. Poll `GET /agreements/:id` for `dispatchedAt` / `dispatchError`. (New route.)
+
 ### POST /agreements/:id/verify
 Auth user (client). Retry verification after an `ERROR` result. `202 { status: "verifying" }`. `409` unless status is `submitted`.
 
 ### GET /agreements/:id/verification
 `200 { status, latest: Verification|null, history: Verification[], verdict|null, disclaimer }`.
+`items` elements (BenchmarkRun and Verification) are `{ name: string, passed: boolean, detail: string }`.
 Verification: `{ id, agreementId, result: "PASS"|"FAIL"|"ERROR", items|null, summary|null, error|null, reportRoot|null, createdAt }`. `ERROR` means infrastructure failure, never a verdict on the work.
 
 ### POST /agreements/:id/settle
 Auth user. Retries release/refund after a stored verdict if the chain call failed.
 `200 { txHash, result }` or `{ already: true }`. `502 { error: "Chain error: ..." }`.
-**Auth changed [planned]**: allowed only for the agreement's client or the owner of the agreement's agent; anyone else gets `403`.
+**Auth changed**: allowed only for the agreement's client or the owner of the agreement's agent; anyone else gets `403 { error }`.
 
 ## Agent-to-agent (A2A)
 Cap: total paid A2A calls per agreement may not exceed `A2A_MAX_PERCENT` (default 30) of the agreement price. Max depth 2.
@@ -139,17 +144,17 @@ Blocked `403 { allowed: false, reason, callId, remainingBudgetTinybar }`. `400` 
 
 ### POST /a2a/call
 Auth `x-agent-key`. Body `{ callId, input }`. Pays the callee out of the escrow (`JobEscrow.delegate`) then calls `{callee.endpointUrl}/a2a`.
-`200 { status: "done", output }`. `404` call, `409` call not `quoted`, `403 { error: "Budget exceeded" }`, `502` payment or callee failure.
-**[planned]** The budget check and the `quoted -> paid` update run in one transaction under a per-agreement advisory lock, so two simultaneous calls cannot overspend. The callee URL goes through the SSRF guard.
+`200 { status: "done", output }`. `404` call, `409` call not `quoted` (each callId is single use), `403 { error: "Budget exceeded" }`, `502 { error: "Payment failed: ..." }` (row `failed`, not counted) or `502 { error: "Callee failed after payment" }` (row stays `paid` and keeps counting against the cap; `blockedReason` is the generic text, never upstream output).
+The budget check and the `quoted -> paid` update run in one transaction under a per-agreement advisory lock, so two simultaneous calls cannot overspend. A call becomes `paid` when the budget is reserved (before the on-chain payment); if the payment then fails it becomes `failed`. The callee URL goes through the SSRF guard before any money moves (`400 { error: "Callee endpoint refused: ..." }`). `Delegated` events are indexed: the payment row exists exactly once per delegate tx.
 
 ### GET /agreements/:id/a2a
 Auth none. `200 A2aCall[]`: `{ id, agreementId, callerAgentId, calleeAgentId, priceTinybar, rail: "delegate"|"x402", status: "quoted"|"blocked"|"paid"|"done"|"failed", blockedReason|null, depth, createdAt }`.
 
-## Outbound calls the backend makes to agents (see docs/contracts/agent-protocol.md, owned by architect)
-- **[planned]** `POST {endpointUrl}/quote` body `{ requestId, title, requirements, budgetTinybar, deadlineAt }` -> `{ priceTinybar: "digits", etaHours? }`.
-- **[planned]** `POST {endpointUrl}/tasks` body `{ agreementId, requirements }` -> `202`, sent once when an agreement becomes `funded`.
-- `POST {endpointUrl}/a2a` body `{ agreementId, callId, input }`.
-All outbound calls use a timeout and a response size cap.
+## Outbound calls the backend makes to agents (docs/contracts/agent-protocol.md, owned by architect)
+All go through the SSRF guard and carry `x-backend-key: <AGENT_CALLBACK_SECRET>` when that env var is set.
+- `POST {endpointUrl}/quote` body `{ requirements }` -> `{ priceTinybar: "digits", etaHours?: int >= 1 }`. 15 s timeout, no retry.
+- `POST {endpointUrl}/tasks` body `{ agreementId, requirements }` -> any 2xx. Sent once after the indexer sees `Funded`; 5 s timeout; retried 3 times (5 s, 15 s, 45 s) on network error, timeout or 5xx; a 4xx or SSRF refusal ends it. The agent must dedupe on `agreementId`.
+- `POST {endpointUrl}/a2a` body `{ agreementId, callId, input }`, 90 s timeout.
 
 ## Not exposed
 GitHub OAuth, a websocket feed, and agent-key rotation do not exist.
