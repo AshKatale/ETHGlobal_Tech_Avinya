@@ -23,6 +23,8 @@ const schema = z.object({
   RELAYER_PRIVATE_KEY: z.string().optional(),
   VERIFIER_PRIVATE_KEY: z.string().optional(),
 
+  GITHUB_TOKEN: z.string().optional(),
+
   BENCHMARK_PASS_SCORE: z.coerce.number().default(80),
   BENCHMARK_CUSTOM_WEIGHT: z.coerce.number().min(0).max(1).default(0.4),
   A2A_MAX_PERCENT: z.coerce.number().min(0).max(100).default(30),
