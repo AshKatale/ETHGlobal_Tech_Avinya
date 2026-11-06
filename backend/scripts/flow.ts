@@ -64,6 +64,7 @@ const payer = (accountId: string, key: string) => wrapFetchWithPaymentFromConfig
 });
 const settlementOf = (res: Response) => decodePaymentResponseHeader((res.headers.get('payment-response') ?? res.headers.get('x-payment-response'))!) as { success: boolean; transaction: string; payer: string };
 
+const created: { id: string; token: string }[] = []; // agents this run listed; unlisted at the end so the marketplace stays clean
 async function listAgent(token: string, name: string, price: bigint, payout: string, endpointUrl?: string) {
   const { agent, apiKey } = await call('POST', '/agents', {
     token, body: {
@@ -72,6 +73,7 @@ async function listAgent(token: string, name: string, price: bigint, payout: str
       priceTinybar: price.toString(), payoutAddress: payout, repoUrl: REPO_URL, endpointUrl,
     },
   });
+  created.push({ id: agent.id, token });
   const { runId } = await call('POST', `/agents/${agent.id}/benchmark`, { token, body: {} });
   const run: any = await waitFor('benchmark', async () => { const r: any = await call('GET', `/agents/${agent.id}/benchmark/${runId}`); return r.status !== 'running' ? r : null; });
   console.log(`  ${name}: benchmark ${run.status}, score ${run.score}`);
@@ -221,6 +223,7 @@ contract AgentToken {
   console.error('\nFLOW FAILED:', (e as Error).message);
   process.exitCode = 1;
 } finally {
+  for (const c of created) await call('POST', `/agents/${c.id}/unlist`, { token: c.token }).catch(() => {});
   aServer.close();
   bServer?.close();
   process.exit(process.exitCode ?? 0);

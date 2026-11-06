@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent, requireUser } from '../lib/auth.js';
 import { ensureTask, fundUrl, loadDesignInputs, payoutUrl } from '../chain/ops.js';
 import { requestDesign } from '../designer/client.js';
 import { dispatchTask, requestQuotes } from '../agents/dispatch.js';
+import { summarizeAgents } from '../lib/agentSummary.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 const idParam = z.object({ id: z.string().uuid() });
@@ -61,7 +62,15 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, id)).limit(1);
     if (!request) return reply.code(404).send({ error: 'Request not found' });
-    const quotes = await db.select().from(schema.quotes).where(eq(schema.quotes.requestId, id));
+    const rows = await db.select().from(schema.quotes).where(eq(schema.quotes.requestId, id));
+    // Each quote carries who is quoting: name, benchmark score and track record.
+    const agents = rows.length ? await db.select().from(schema.agents).where(inArray(schema.agents.id, rows.map((q) => q.agentId))) : [];
+    const sums = await summarizeAgents(agents);
+    const quotes = rows.map((q) => {
+      const a = agents.find((x) => x.id === q.agentId);
+      const sm = sums.get(q.agentId);
+      return { ...q, agent: a ? { id: a.id, name: a.name, capabilities: a.capabilities, score: sm?.score ?? null, jobsCompleted: sm?.jobsCompleted ?? 0, jobsFailed: sm?.jobsFailed ?? 0 } : undefined };
+    });
     return { request, quotes };
   });
 
@@ -196,13 +205,28 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     return legs.map((l) => ({ legId: l.legId, status: l.status, priceTinybar: String(l.priceTinybar), payeeAccountId: l.payeeAccountId, payUrl: payoutUrl(id, l.legId), payoutTx: l.payoutTx }));
   });
 
+  // Jobs where I am the client (default) or jobs on agents I own (?as=agent). Rows carry the title, agent and client.
   app.get('/agreements', { preHandler: requireUser }, async (req) => {
-    const mine = await db
-      .select()
-      .from(schema.agreements)
-      .where(eq(schema.agreements.clientUserId, req.user!.id))
-      .orderBy(desc(schema.agreements.createdAt));
-    return mine;
+    const { as } = z.object({ as: z.enum(['client', 'agent']).default('client') }).parse(req.query);
+    let rows;
+    if (as === 'agent') {
+      const mine = await db.select({ id: schema.agents.id }).from(schema.agents).where(eq(schema.agents.ownerUserId, req.user!.id));
+      rows = mine.length
+        ? await db.select().from(schema.agreements).where(inArray(schema.agreements.agentId, mine.map((m) => m.id))).orderBy(desc(schema.agreements.createdAt))
+        : [];
+    } else {
+      rows = await db.select().from(schema.agreements).where(eq(schema.agreements.clientUserId, req.user!.id)).orderBy(desc(schema.agreements.createdAt));
+    }
+    if (!rows.length) return [];
+    const requests = await db.select({ id: schema.requests.id, title: schema.requests.title }).from(schema.requests).where(inArray(schema.requests.id, rows.map((r) => r.requestId)));
+    const agents = await db.select({ id: schema.agents.id, name: schema.agents.name }).from(schema.agents).where(inArray(schema.agents.id, rows.map((r) => r.agentId)));
+    const clients = await db.select({ id: schema.users.id, address: schema.users.address }).from(schema.users).where(inArray(schema.users.id, rows.map((r) => r.clientUserId)));
+    return rows.map((r) => ({
+      ...r,
+      title: requests.find((x) => x.id === r.requestId)?.title ?? 'Job',
+      agentName: agents.find((x) => x.id === r.agentId)?.name ?? 'Agent',
+      clientAddress: clients.find((x) => x.id === r.clientUserId)?.address,
+    }));
   });
 
   // Retry escrow creation if the chain was unavailable at accept time.

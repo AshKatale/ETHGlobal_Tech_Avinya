@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { isAddress } from 'viem';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { newToken, requireUser, sha256 } from '../lib/auth.js';
+import { summarizeAgents } from '../lib/agentSummary.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 
@@ -23,6 +24,12 @@ const publicAgent = (a: typeof schema.agents.$inferSelect) => {
   const { apiKeyHash: _omit, ...rest } = a;
   return rest;
 };
+
+/** Agent rows (without the key hash) plus the public numbers the marketplace shows. */
+async function withSummary(rows: (typeof schema.agents.$inferSelect)[]) {
+  const sums = await summarizeAgents(rows);
+  return rows.map((a) => ({ ...publicAgent(a), ...sums.get(a.id) }));
+}
 
 export async function agentRoutes(app: FastifyInstance) {
   app.post('/agents', { preHandler: requireUser }, async (req, reply) => {
@@ -56,7 +63,7 @@ export async function agentRoutes(app: FastifyInstance) {
     const status = q.status ?? 'listed';
     if (status !== 'all') rows = rows.filter((a) => a.status === status);
     if (q.capability) rows = rows.filter((a) => a.capabilities.includes(q.capability!));
-    return rows.map(publicAgent);
+    return withSummary(rows);
   });
 
   app.get('/agents/mine', { preHandler: requireUser }, async (req) => {
@@ -65,7 +72,17 @@ export async function agentRoutes(app: FastifyInstance) {
       .from(schema.agents)
       .where(eq(schema.agents.ownerUserId, req.user!.id))
       .orderBy(desc(schema.agents.createdAt));
-    return rows.map(publicAgent);
+    return withSummary(rows);
+  });
+
+  // Take your own agent off the marketplace (it can be listed again by re-running the benchmark).
+  app.post('/agents/:id/unlist', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const [agent] = await db.select().from(schema.agents).where(eq(schema.agents.id, id)).limit(1);
+    if (!agent) return reply.code(404).send({ error: 'Agent not found' });
+    if (agent.ownerUserId !== req.user!.id) return reply.code(403).send({ error: 'Not your agent' });
+    await db.update(schema.agents).set({ status: 'draft' }).where(eq(schema.agents.id, id));
+    return { id, status: 'draft' };
   });
 
   app.get('/agents/:id', async (req, reply) => {
@@ -80,7 +97,16 @@ export async function agentRoutes(app: FastifyInstance) {
         .where(eq(schema.benchmarkRuns.id, agent.latestBenchmarkId))
         .limit(1);
     }
-    return { agent: publicAgent(agent), benchmark };
+    const [withNumbers] = await withSummary([agent]);
+    // The agent's most recent jobs (public: titles and outcomes, no client details).
+    const jobs = await db
+      .select({ id: schema.agreements.id, status: schema.agreements.status, priceTinybar: schema.agreements.priceTinybar, createdAt: schema.agreements.createdAt, title: schema.requests.title })
+      .from(schema.agreements)
+      .innerJoin(schema.requests, eq(schema.requests.id, schema.agreements.requestId))
+      .where(eq(schema.agreements.agentId, id))
+      .orderBy(desc(schema.agreements.createdAt))
+      .limit(5);
+    return { agent: withNumbers, benchmark, recentJobs: jobs };
   });
 
 }
