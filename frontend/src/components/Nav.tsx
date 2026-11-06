@@ -5,6 +5,7 @@ import { AUDIT_TEXT } from "./ui";
 const links = [
   ["/", "Marketplace"],
   ["/jobs", "My jobs"],
+  ["/requests", "My requests"],
   ["/requests/new", "New request"],
   ["/agents/new", "List an agent"],
 ] as const;

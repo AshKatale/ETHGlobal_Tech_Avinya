@@ -1,8 +1,8 @@
 "use client";
 import type { ReactNode } from "react";
-import { Card, CopyButton, HashScanLink, Mono } from "@/components/ui";
-import { shorten } from "@/lib/format";
-import type { AgreementDetail, Verification } from "@/lib/api";
+import { Card, CopyButton, HashScanLink, Hbar, Mono } from "@/components/ui";
+import { fmtDate, isTinybarString, shorten } from "@/lib/format";
+import type { AgreementDetail, AuditEntry, AuditResponse, Verification } from "@/lib/api";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -13,27 +13,22 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** One audit entry from GET /agreements/:id/audit, rendered defensively. */
-export interface AuditEntryView {
-  id?: string;
-  kind?: string;
-  [k: string]: unknown;
-}
-
 export function AuditPanel({
   d,
   latest,
   auditEntries,
+  audit,
 }: {
   d: AgreementDetail;
   latest: Verification | null;
-  auditEntries?: AuditEntryView[] | null;
+  auditEntries?: AuditEntry[] | null;
+  audit?: AuditResponse | null;
 }) {
   const v = d.verdict;
   const sub = d.submission;
   if (!v && !sub) return null;
-  const settleTx = v?.settleTxHash ?? d.payments.find((p) => p.kind === "release" || p.kind === "refund")?.txHash ?? null;
-  const reportRoot = latest?.reportRoot ?? null;
+  const settleTx = v?.settleTxHash ?? audit?.settleTxHash ?? d.payments.find((p) => p.kind === "release" || p.kind === "refund")?.txHash ?? null;
+  const reportRoot = latest?.reportRoot ?? audit?.reportRoot ?? null;
   return (
     <Card>
       <h2 className="text-lg font-semibold">Audit trail</h2>
@@ -107,9 +102,9 @@ export function AuditPanel({
         <div className="mt-4">
           <h3 className="text-sm font-semibold">Signature audit log</h3>
           <ul className="mt-2 space-y-2 text-sm">
-            {auditEntries.map((e, i) => (
-              <li key={String(e.id ?? i)} className="rounded-lg bg-surface-2 p-2">
-                <AuditEntry e={e} />
+            {auditEntries.map((e) => (
+              <li key={e.id} className="rounded-lg bg-surface-2 p-2">
+                <AuditEntryRow e={e} />
               </li>
             ))}
           </ul>
@@ -119,23 +114,28 @@ export function AuditPanel({
   );
 }
 
-function AuditEntry({ e }: { e: AuditEntryView }) {
-  const fields = Object.entries(e).filter(([k, val]) => k !== "id" && val !== null && val !== undefined && typeof val !== "object");
+function AuditEntryRow({ e }: { e: AuditEntry }) {
+  const isVerdict = e.kind === "verdict";
   return (
     <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[10rem_1fr]">
-      {fields.map(([k, val]) => {
-        const s = String(val);
-        const long = s.length > 40;
-        return (
-          <div key={k} className="contents">
-            <dt className="text-muted-foreground">{k}</dt>
-            <dd className="flex flex-wrap items-center gap-2 break-all">
-              <Mono>{long ? shorten(s, 12, 8) : s}</Mono>
-              {long && <CopyButton value={s} />}
-            </dd>
-          </div>
-        );
-      })}
+      <dt className="text-muted-foreground">Kind</dt>
+      <dd>{isVerdict ? "Verdict signature" : "Delegation (agent paid agent)"}</dd>
+      <dt className="text-muted-foreground">Nonce</dt>
+      <dd><Mono>{e.nonce}</Mono></dd>
+      <dt className="text-muted-foreground">Signer</dt>
+      <dd className="flex flex-wrap items-center gap-2 break-all">
+        <Mono>{shorten(e.signerAddress, 10, 6)}</Mono>
+        <CopyButton value={e.signerAddress} label="Copy signer" />
+      </dd>
+      <dt className="text-muted-foreground">{isVerdict ? "Result" : "Amount"}</dt>
+      <dd>{!isVerdict && isTinybarString(e.resultOrAmount) ? <Hbar value={e.resultOrAmount} /> : <Mono>{e.resultOrAmount}</Mono>}</dd>
+      <dt className="text-muted-foreground">Signature sha256</dt>
+      <dd className="flex flex-wrap items-center gap-2 break-all">
+        <Mono>{shorten(e.sigSha256, 12, 8)}</Mono>
+        <CopyButton value={e.sigSha256} label="Copy hash" />
+      </dd>
+      <dt className="text-muted-foreground">Time</dt>
+      <dd>{fmtDate(e.createdAt)}</dd>
     </dl>
   );
 }

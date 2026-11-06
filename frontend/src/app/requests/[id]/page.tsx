@@ -1,12 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useQueries } from "@tanstack/react-query";
 import { useState } from "react";
 import { FundPanel } from "@/components/FundPanel";
 import { AuditNotice, Alert, Badge, Button, ButtonLink, Card, EmptyState, ErrorPanel, Hbar, Loading, PageSkeleton, QueryError, SeededBadge } from "@/components/ui";
 import { useApi, useMe } from "@/hooks/useApi";
-import { api, ApiError, type AcceptResponse, type Agent, type Agreement, type Quote, type RequestJob } from "@/lib/api";
+import { api, ApiError, type AcceptResponse, type Agreement, type Quote, type RequestJob } from "@/lib/api";
 import { fmtDate, scoreText } from "@/lib/format";
 
 export default function RequestPage() {
@@ -17,13 +16,6 @@ export default function RequestPage() {
   });
   const me = useMe();
   const agreements = useApi<Agreement[]>(["agreements"], me.data ? "/agreements" : null);
-  const agentIds = [...new Set(q.data?.quotes.map((x) => x.agentId) ?? [])];
-  const agentQs = useQueries({
-    queries: agentIds.map((aid) => ({
-      queryKey: ["agent", aid],
-      queryFn: () => api<{ agent: Agent; benchmark: { score: string | null } | null }>(`/agents/${aid}`),
-    })),
-  });
   const [confirm, setConfirm] = useState<Quote | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [acceptErr, setAcceptErr] = useState<unknown>(null);
@@ -37,7 +29,6 @@ export default function RequestPage() {
   const { request, quotes } = q.data!;
   const isClient = me.data?.id === request.clientUserId;
   const agreement = accepted ?? agreements.data?.find((a) => a.requestId === request.id) ?? null;
-  const agentInfo = (aid: string) => agentQs[agentIds.indexOf(aid)]?.data;
 
   async function accept() {
     if (!confirm) return;
@@ -84,13 +75,12 @@ export default function RequestPage() {
           )}
           <ul className="space-y-3">
             {quotes.map((qt) => {
-              const info = agentInfo(qt.agentId);
               const over = BigInt(qt.priceTinybar) > BigInt(request.budgetTinybar);
               return (
                 <li key={qt.id}>
                   <Card className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-medium">{info?.agent.name ?? "Agent"} {info?.benchmark?.score && <span className="text-sm text-muted-foreground">Benchmark {scoreText(info.benchmark.score)} / 100</span>}</p>
+                      <p className="font-medium">{qt.agentName ?? "Agent"} {qt.latestScore != null && <span className="text-sm text-muted-foreground">Benchmark {scoreText(qt.latestScore)} / 100</span>}</p>
                       <p className="text-sm"><Hbar value={qt.priceTinybar} /> {over && <Badge tone="warning">Over budget</Badge>} <span className="text-muted-foreground">{qt.etaHours != null ? `${qt.etaHours} hours` : "ETA not given"}</span></p>
                       <Link className="text-sm text-primary underline" href={`/agents/${qt.agentId}`}>View agent</Link>
                     </div>
@@ -111,7 +101,7 @@ export default function RequestPage() {
         <div role="dialog" aria-modal="true" aria-labelledby="dlg-h" className="fixed inset-0 z-10 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md space-y-3 rounded-lg bg-surface p-6 shadow-md">
             <h2 id="dlg-h" className="text-lg font-semibold">Accept this quote?</h2>
-            <p>{agentInfo(confirm.agentId)?.agent.name ?? "Agent"} for <Hbar value={confirm.priceTinybar} />.</p>
+            <p>{confirm.agentName ?? "Agent"} for <Hbar value={confirm.priceTinybar} />.</p>
             <p className="text-sm">Funds stay in a per-job escrow contract until the automated check decides. PASS pays the agent; FAIL refunds you.</p>
             <AuditNotice />
             {acceptErr ? <QueryError error={acceptErr} title="Could not accept" /> : null}

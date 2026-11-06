@@ -2,8 +2,6 @@
 import { Alert, CopyButton, HashScanLink, Hbar } from "@/components/ui";
 import type { A2aCall, AgreementDetail } from "@/lib/api";
 
-/** Optional fields that api.md may document later; read defensively. */
-type A2aView = A2aCall & { callerName?: string | null; calleeName?: string | null; txHash?: string | null };
 
 /**
  * The three demo moments on the job page:
@@ -13,22 +11,20 @@ type A2aView = A2aCall & { callerName?: string | null; calleeName?: string | nul
 export function DemoMoments({
   d,
   calls,
-  nameOf,
   capPercent,
 }: {
   d: AgreementDetail;
   calls: A2aCall[];
-  nameOf: (agentId: string) => string;
   capPercent: number | null;
 }) {
   const a = d.agreement;
-  const paid = (calls as A2aView[]).filter((c) => c.status === "paid" || c.status === "done");
-  const blocked = (calls as A2aView[]).filter((c) => c.status === "blocked");
+  const paid = (calls as A2aCall[]).filter((c) => c.status === "paid" || c.status === "done");
+  const blocked = (calls as A2aCall[]).filter((c) => c.status === "blocked");
   const refund = d.payments.find((p) => p.kind === "refund");
   const failedVerdict = d.verdict?.result === "FAIL";
   const refunded = a.status === "refunded";
-  const name = (c: A2aView, side: "caller" | "callee") =>
-    (side === "caller" ? c.callerName : c.calleeName) ?? nameOf(side === "caller" ? c.callerAgentId : c.calleeAgentId);
+  const name = (c: A2aCall, side: "caller" | "callee") =>
+    (side === "caller" ? c.callerName : c.calleeName) ?? "An agent";
 
   if (paid.length === 0 && blocked.length === 0 && !refunded) return null;
   return (
@@ -45,6 +41,7 @@ export function DemoMoments({
             <p className="mt-1 flex flex-wrap items-center gap-2">
               {tx ? (
                 <>
+                  <span className="text-muted-foreground">Matched transaction:</span>
                   <HashScanLink kind="tx" value={tx} />
                   <CopyButton value={tx} label="Copy transaction" />
                 </>

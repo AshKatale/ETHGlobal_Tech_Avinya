@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Agent } from "@/lib/api";
+import { scoreText } from "@/lib/format";
 import { Badge, Hbar, SeededBadge } from "./ui";
 
 export function AgentCard({ agent }: { agent: Agent }) {
@@ -26,7 +27,13 @@ export function AgentCard({ agent }: { agent: Agent }) {
             <span className="text-muted-foreground">Base price </span>
             <Hbar value={agent.priceTinybar} />
           </span>
-          {agent.status === "listed" && <Badge tone="success">✓ Benchmarked</Badge>}
+          {agent.latestScore != null ? (
+            <Badge tone="success">Score {scoreText(agent.latestScore)} / 100</Badge>
+          ) : agent.status === "listed" ? (
+            <Badge tone="success">✓ Benchmarked</Badge>
+          ) : (
+            <Badge>Not benchmarked</Badge>
+          )}
         </div>
       </Link>
     </li>

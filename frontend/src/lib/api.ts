@@ -20,6 +20,8 @@ export interface Agent {
   latestBenchmarkId: string | null;
   isSeeded: boolean;
   createdAt: string;
+  /** Score of the latest benchmark run (numeric string) or null. Optional for graceful fallback. */
+  latestScore?: string | null;
 }
 export interface BenchmarkRun {
   id: string;
@@ -56,6 +58,8 @@ export interface Quote {
   etaHours: number | null;
   status: "open" | "accepted" | "rejected";
   createdAt: string;
+  agentName?: string | null;
+  latestScore?: string | null;
 }
 export type AgreementStatus = "agreed" | "funded" | "submitted" | "verifying" | "released" | "refunded";
 export interface Agreement {
@@ -70,6 +74,12 @@ export interface Agreement {
   status: AgreementStatus;
   createdAt: string;
 }
+export interface AgreementTimestamps {
+  fundedAt: string | null;
+  submittedAt: string | null;
+  settledAt: string | null;
+}
+export type ViewerAccess = "full" | "public";
 export type AcceptResponse = Agreement & { escrowError?: string };
 export interface Payment {
   id: string;
@@ -103,9 +113,46 @@ export interface AgreementDetail {
   agreement: Agreement;
   request: RequestJob;
   agent: { id: string; name: string; payoutAddress: string };
-  submission: Submission | null;
+  /** In the public view `content` is absent and `redacted` is true. */
+  submission: (Omit<Submission, "content"> & { content?: string; redacted?: boolean }) | null;
   verdict: Verdict | null;
   payments: Payment[];
+  timestamps?: AgreementTimestamps;
+  a2aMaxPercent?: number;
+  viewerAccess?: ViewerAccess;
+}
+export interface AuditEntry {
+  id: string;
+  kind: "verdict" | "delegation";
+  agreementId: string;
+  escrowAddress: string | null;
+  signerAddress: string;
+  nonce: string;
+  resultOrAmount: string;
+  sigSha256: string;
+  createdAt: string;
+}
+export interface AuditResponse {
+  agreementId: string;
+  escrowAddress: string | null;
+  entries: AuditEntry[];
+  verdict: { result: string; nonce: string | null; signature: string | null; settleTxHash: string | null } | null;
+  settleTxHash: string | null;
+  reportRoot: string | null;
+  deliverableHash: string | null;
+}
+export interface PublicConfig {
+  a2aMaxPercent: number;
+  minDeadlineMinutes: number;
+  defaultDeadlineDays: number;
+  benchmarkPassScore: number;
+  chainId: number;
+}
+export interface RefundTimeoutResponse {
+  txHash?: string;
+  result?: "refund_timeout";
+  already?: boolean;
+  inProgress?: boolean;
 }
 export interface Verification {
   id: string;
@@ -122,6 +169,7 @@ export interface VerificationResponse {
   latest: Verification | null;
   history: Verification[];
   verdict: Verdict | null;
+  viewerAccess?: ViewerAccess;
   disclaimer: string;
 }
 export interface A2aCall {
@@ -135,6 +183,10 @@ export interface A2aCall {
   blockedReason: string | null;
   depth: number;
   createdAt: string;
+  callerName?: string | null;
+  calleeName?: string | null;
+  /** Matched by amount in creation order, so it is a best guess. */
+  txHash?: string | null;
 }
 export interface Me {
   id: string;
@@ -149,6 +201,7 @@ export class ApiError extends Error {
     public status: number,
     message: string,
     public issues?: { path: (string | number)[]; message: string }[],
+    public body?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -182,7 +235,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   if (!res.ok) {
     const d = (data ?? {}) as { error?: string; issues?: { path: (string | number)[]; message: string }[] };
     if (res.status === 401 && token && !path.startsWith("/auth/")) setToken(null);
-    throw new ApiError(res.status, d.error ?? `Request failed (${res.status})`, d.issues);
+    throw new ApiError(res.status, d.error ?? `Request failed (${res.status})`, d.issues, (data ?? undefined) as Record<string, unknown> | undefined);
   }
   return data as T;
 }

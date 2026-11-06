@@ -1,15 +1,17 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { AuditPanel } from "@/components/AuditPanel";
+import { ClaimRefund } from "@/components/ClaimRefund";
 import { DemoMoments } from "@/components/DemoMoments";
 import { ItemList } from "@/components/BenchmarkReport";
 import { Alert, AuditNotice, Badge, Button, Card, ChainStatus, CopyButton, EmptyState, ErrorPanel, HashScanLink, Hbar, Mono, PageSkeleton, QueryError, SeededBadge, VerdictBadge } from "@/components/ui";
 import { useApi, useMe } from "@/hooks/useApi";
-import { api, type A2aCall, type Agent, type AgreementDetail, type AgreementStatus, type VerificationResponse } from "@/lib/api";
-import { fmtDate } from "@/lib/format";
+import { useWallet } from "@/hooks/useWallet";
+import { api, type A2aCall, type Agent, type AgreementDetail, type AgreementStatus, type AuditResponse, type PublicConfig, type VerificationResponse } from "@/lib/api";
+import { capTinybar, fmtDate, pickCapPercent } from "@/lib/format";
 
 const ORDER: AgreementStatus[] = ["agreed", "funded", "submitted", "verifying"];
 const inFlight = (s?: AgreementStatus) => s === "agreed" || s === "funded" || s === "submitted" || s === "verifying";
@@ -23,10 +25,10 @@ function Timeline({ d }: { d: AgreementDetail }) {
   const settle = pay(a.status === "refunded" ? "refund" : "release");
   const rows: { key: string; label: string; at?: string | null; extra?: React.ReactNode; active: string }[] = [
     { key: "agreed", label: "Agreement created", extra: <HashScanLink kind="contract" value={a.escrowAddress} />, at: a.createdAt, active: "" },
-    { key: "funded", label: "Escrow funded", at: fund?.createdAt, extra: <HashScanLink kind="tx" value={fund?.txHash} />, active: "Waiting for the buyer to fund the escrow" },
-    { key: "submitted", label: "Work submitted", at: d.submission?.submittedAt, active: "Waiting for the agent to submit work" },
+    { key: "funded", label: "Escrow funded", at: d.timestamps?.fundedAt ?? fund?.createdAt, extra: <HashScanLink kind="tx" value={fund?.txHash} />, active: "Waiting for the buyer to fund the escrow" },
+    { key: "submitted", label: "Work submitted", at: d.timestamps?.submittedAt ?? d.submission?.submittedAt, active: "Waiting for the agent to submit work" },
     { key: "verifying", label: "Verifying", active: "Checking the submitted work against the requirements" },
-    { key: "settled", label: a.status === "refunded" ? "Refunded" : "Released", at: settle?.createdAt, extra: <HashScanLink kind="tx" value={settle?.txHash ?? d.verdict?.settleTxHash} />, active: d.verdict ? "Verdict signed, waiting for confirmation of the on-chain payout" : "Waiting for the verdict" },
+    { key: "settled", label: a.status === "refunded" ? "Refunded" : "Released", at: d.timestamps?.settledAt ?? settle?.createdAt, extra: <HashScanLink kind="tx" value={settle?.txHash ?? d.verdict?.settleTxHash} />, active: d.verdict ? "Verdict signed, waiting for confirmation of the on-chain payout" : "Waiting for the verdict" },
   ];
   const cur = settled ? rows.length : idx + 1; // first not-done row
   return (
@@ -54,15 +56,15 @@ export default function JobPage() {
   const { agreementId: id } = useParams<{ agreementId: string }>();
   const qc = useQueryClient();
   const me = useMe();
+  const { signedIn } = useWallet(); // the token is sent by api(); the key refetches on sign-in/out
+  const who = signedIn ? "user" : "anon";
   const poll = (d?: AgreementDetail) => inFlight(d?.agreement.status);
-  const dq = useApi<AgreementDetail>(["agreement", id], `/agreements/${id}`, { poll });
+  const dq = useApi<AgreementDetail>(["agreement", id, who], `/agreements/${id}`, { poll });
   const live = inFlight(dq.data?.agreement.status);
-  const vq = useApi<VerificationResponse>(["verification", id], `/agreements/${id}/verification`, { poll: () => live });
-  const aq = useApi<A2aCall[]>(["a2a", id], `/agreements/${id}/a2a`, { poll: () => live });
-  const agentIds = [...new Set((aq.data ?? []).flatMap((c) => [c.callerAgentId, c.calleeAgentId]))];
-  const names = useQueries({
-    queries: agentIds.map((aid) => ({ queryKey: ["agent", aid], queryFn: () => api<{ agent: Agent }>(`/agents/${aid}`) })),
-  });
+  const vq = useApi<VerificationResponse>(["verification", id, who], `/agreements/${id}/verification`, { poll: () => live });
+  const aq = useApi<A2aCall[]>(["a2a", id, who], `/agreements/${id}/a2a`, { poll: () => live });
+  const auditQ = useApi<AuditResponse>(["audit", id], `/agreements/${id}/audit`, { poll: () => live });
+  const configQ = useApi<PublicConfig>(["config"], "/config");
   const agentQ = useApi<{ agent: Agent }>(["agent", dq.data?.agent.id], dq.data ? `/agents/${dq.data.agent.id}` : null);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ tone: "info" | "warning" | "success"; text: string } | null>(null);
@@ -81,11 +83,12 @@ export default function JobPage() {
   const verdict = d.verdict;
   const settled = a.status === "released" || a.status === "refunded";
   const settlePayment = d.payments.find((p) => p.kind === (a.status === "refunded" ? "refund" : "release"));
-  const nameOf = (aid: string) => names[agentIds.indexOf(aid)]?.data?.agent.name ?? "Agent";
+  const publicView = d.viewerAccess === "public";
   const a2a = aq.data ?? [];
   const spent = a2a.filter((c) => c.status === "paid" || c.status === "done").reduce((s, c) => s + BigInt(c.priceTinybar), 0n);
-  const capPercent = 30; // fallback: A2A_MAX_PERCENT default; replaced by GET /config once documented
-  const cap = (BigInt(a.priceTinybar) * BigInt(capPercent)) / 100n;
+  const capPercent = pickCapPercent(d.a2aMaxPercent, configQ.data?.a2aMaxPercent);
+  const cap = capPercent !== null ? capTinybar(a.priceTinybar, capPercent) : null;
+  const canClaimRefund = (isClient || isAgentOwner) && (a.status === "submitted" || a.status === "verifying");
   const pastDeadline = a.status === "funded" && a.deadlineAt && Date.parse(a.deadlineAt) < Date.now();
 
   async function act(kind: "verify" | "settle") {
@@ -120,7 +123,14 @@ export default function JobPage() {
 
       {(dq.isError || vq.isError || aq.isError) && <p className="text-sm text-warning">Some data could not refresh.</p>}
 
-      <DemoMoments d={d} calls={a2a} nameOf={nameOf} capPercent={capPercent} />
+      {publicView && (
+        <Alert tone="info" title="Limited view">
+          Submission and raw details are visible to the client and the agent owner only. Hashes, the verdict, nonce, signature and transaction links are shown below.
+          {!signedIn && <> <Link className="text-primary underline" href="/connect">Sign in</Link> if you are the client or the agent owner.</>}
+        </Alert>
+      )}
+
+      <DemoMoments d={d} calls={a2a} capPercent={capPercent} />
 
       <Card><h2 className="mb-3 text-lg font-semibold">Timeline</h2><Timeline d={d} />
         {pastDeadline && <div className="mt-3"><Alert tone="warning">Past deadline. Refund after deadline is a contract function (not in this app&apos;s scope).</Alert></div>}
@@ -131,10 +141,17 @@ export default function JobPage() {
         <h2 className="text-lg font-semibold">Submission</h2>
         {d.submission ? (
           <div className="mt-2 space-y-2 text-sm">
-            <p>{d.submission.kind === "repo" ? <a className="text-primary underline break-all" href={d.submission.content} target="_blank" rel="noopener noreferrer">{d.submission.content}</a> : null}</p>
-            {d.submission.kind === "text" && <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3">{d.submission.content}</pre>}
+            {d.submission.content === undefined || d.submission.redacted ? (
+              <p className="text-muted-foreground">Submission and raw details are visible to the client and the agent owner only.</p>
+            ) : (
+              <>
+                {d.submission.kind === "repo" && <p><a className="text-primary underline break-all" href={d.submission.content} target="_blank" rel="noopener noreferrer">{d.submission.content}</a></p>}
+                {d.submission.kind === "text" && <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3">{d.submission.content}</pre>}
+              </>
+            )}
+            <p>Kind: {d.submission.kind}</p>
             <p>Deliverable hash: <Mono>{d.submission.deliverableHash}</Mono> <CopyButton value={d.submission.deliverableHash} /></p>
-            <p className="text-muted-foreground">Submitted {fmtDate(d.submission.submittedAt)}</p>
+            <p className="text-muted-foreground">Submitted {fmtDate(d.timestamps?.submittedAt ?? d.submission.submittedAt)}</p>
           </div>
         ) : (
           <p className="mt-2 text-muted-foreground">{a.status === "agreed" ? "Fund the escrow to start work." : "Waiting for the agent to submit."}</p>
@@ -153,7 +170,7 @@ export default function JobPage() {
                 {latest.summary && <p className="text-sm">{latest.summary}</p>}
                 {latest.result === "ERROR" ? (
                   <>
-                    <ErrorPanel title="Verification could not run" detail={latest.error ?? undefined} />
+                    <ErrorPanel title="Verification could not run" detail={publicView ? undefined : (latest.error ?? undefined)} />
                     <p className="text-sm">This is not a fail. The work was not judged.</p>
                     {isClient && a.status === "submitted" && <Button onClick={() => act("verify")} disabled={busy === "verify"}>{busy === "verify" ? "Retrying..." : "Retry verification"}</Button>}
                   </>
@@ -183,7 +200,7 @@ export default function JobPage() {
               <p className="flex flex-wrap items-center gap-2 text-sm"><ChainStatus state="pending" /> Verdict signed, waiting for confirmation of the on-chain payout</p>
             )}
             <HashScanLink kind="tx" value={verdict.settleTxHash ?? settlePayment?.txHash} />
-            {verdict.settleError && !settled && (
+            {verdict.settleError && !settled && !publicView && (
               <>
                 <ErrorPanel title="The payout transaction failed" detail={verdict.settleError} />
                 {(isClient || isAgentOwner) && <Button onClick={() => act("settle")} disabled={busy === "settle"}>{busy === "settle" ? "Retrying..." : "Retry payout"}</Button>}
@@ -192,7 +209,9 @@ export default function JobPage() {
           </div>
         </Card>
       )}
-      <AuditPanel d={d} latest={latest} />
+      {canClaimRefund && <ClaimRefund agreementId={id} />}
+      <AuditPanel d={d} latest={latest} auditEntries={auditQ.data?.entries ?? null} audit={auditQ.data ?? null} />
+      {auditQ.isError && <QueryError error={auditQ.error} title="Could not load the signature audit log" onRetry={() => auditQ.refetch()} />}
       {actionMsg && <Alert tone={actionMsg.tone}>{actionMsg.text}</Alert>}
       {actionErr ? <QueryError error={actionErr} title="Action failed" /> : null}
 
@@ -225,7 +244,7 @@ export default function JobPage() {
         {aq.data && a2a.length === 0 && <p className="mt-2 text-muted-foreground">No agent-to-agent calls in this job.</p>}
         {a2a.length > 0 && (
           <>
-            <p className="mt-2 text-sm">Paid so far <Hbar value={spent.toString()} /> of a cap of <Hbar value={cap.toString()} /> ({capPercent}% of the job price).</p>
+            <p className="mt-2 text-sm">Paid so far <Hbar value={spent.toString()} />{cap !== null && capPercent !== null ? <> of a cap of <Hbar value={cap.toString()} /> ({capPercent}% of the job price)</> : null}.</p>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">Agent-to-agent calls</caption>
@@ -233,8 +252,8 @@ export default function JobPage() {
                 <tbody>
                   {a2a.map((c) => (
                     <tr key={c.id} className="border-t border-border align-top">
-                      <td className="p-2">{nameOf(c.callerAgentId)}</td>
-                      <td className="p-2">{nameOf(c.calleeAgentId)}</td>
+                      <td className="p-2">{c.callerName ?? "Agent"}</td>
+                      <td className="p-2">{c.calleeName ?? "Agent"}</td>
                       <td className="p-2"><Hbar value={c.priceTinybar} /></td>
                       <td className="p-2"><Badge tone="info">{c.rail}</Badge></td>
                       <td className="p-2">
@@ -242,6 +261,9 @@ export default function JobPage() {
                           {c.status === "blocked" ? "⛔ blocked" : c.status}
                         </Badge>
                         {c.status === "blocked" && <p className="mt-1 text-warning">Blocked: {c.blockedReason ?? "no reason given"}</p>}
+                        {(c.status === "paid" || c.status === "done") && c.txHash && (
+                          <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">Matched transaction: <HashScanLink kind="tx" value={c.txHash} /></p>
+                        )}
                       </td>
                       <td className="p-2">{c.depth}</td>
                     </tr>
@@ -249,7 +271,7 @@ export default function JobPage() {
                 </tbody>
               </table>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Transaction links for A2A payments are in the Payments table above.</p>
+            <p className="mt-2 text-xs text-muted-foreground">The Payments table above is the authoritative list of transactions. A &quot;matched transaction&quot; is paired to a call by amount and order, so it can be wrong when two calls cost the same.</p>
           </>
         )}
       </Card>

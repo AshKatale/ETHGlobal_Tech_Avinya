@@ -33,3 +33,35 @@ export function toItems(items: unknown): CheckItem[] {
     return { name, passed: typeof passedRaw === "boolean" ? passedRaw : null, detail: detail != null ? String(detail) : null };
   });
 }
+
+/** Countdown text for a number of seconds, e.g. 90061 -> "1 d 1 h 1 min". Never negative. */
+export function formatCountdown(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s} s`;
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return [d ? `${d} d` : "", h ? `${h} h` : "", `${m} min`].filter(Boolean).join(" ");
+}
+
+/** Cap percent from the API (agreement, then /config); null when unknown. */
+export function pickCapPercent(...candidates: (number | null | undefined)[]): number | null {
+  for (const c of candidates) if (typeof c === "number" && Number.isFinite(c) && c >= 0) return c;
+  return null;
+}
+
+/** Cap in tinybar (bigint) for a percent; no floats. Integer percents only; fractions are floored. */
+export function capTinybar(priceTinybar: string, percent: number): bigint {
+  return (BigInt(priceTinybar) * BigInt(Math.floor(percent))) / 100n;
+}
+
+/** Remaining seconds from a 409 refund-timeout body, or null. */
+export function remainingSecondsFrom(body: Record<string, unknown> | undefined): number | null {
+  const v = body?.remainingSeconds;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+}
+
+/** Audit entry display: amount for a delegation is tinybar (caller formats it); verdict is PASS/FAIL. */
+export function isTinybarString(v: string): boolean {
+  return /^\d+$/.test(v);
+}
