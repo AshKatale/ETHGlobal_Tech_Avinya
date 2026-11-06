@@ -44,6 +44,7 @@ function WalletMenu({ onClose }: { onClose: () => void }) {
       )}
       <div className="gvm-acts">
         <Link className="gvm-btn" href="/dashboard" onClick={onClose}>Dashboard</Link>
+        <Link className="gvm-btn" href="/account" onClick={onClose}>Account</Link>
         <button className="gvm-btn" onClick={() => { onClose(); signOut(); }}>Disconnect</button>
       </div>
       <a className="gvm-btn" style={{ width: '100%', marginTop: 10 }} href={FAUCET_URL} target="_blank" rel="noopener noreferrer">Get test HBAR (Hedera faucet)</a>

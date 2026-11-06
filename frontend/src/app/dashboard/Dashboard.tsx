@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { fmtHbar } from '@/lib/money';
 import { ago, shortAddr } from '@/lib/format';
 import { txUrl, shortTx } from '@/lib/hashscan';
+import { useMe } from '@/lib/queries';
 import { useSession } from '@/providers/Session';
 import type { Agent, JobRow, MySummary } from '@/lib/types';
 import AgentCard from '@/components/AgentCard';
@@ -26,6 +27,7 @@ export default function Dashboard() {
   const raw = useSearchParams().get('tab');
   const tab: Tab = TABS.some((t) => t.key === raw) ? (raw as Tab) : 'jobs';
   const on = session.signedIn;
+  const me = useMe();
 
   const summary = useQuery({ queryKey: ['summary'], queryFn: () => api<MySummary>('/me/summary', { auth: true }), enabled: on, refetchInterval: 15_000 });
   const jobs = useQuery({ queryKey: ['jobs', 'client'], queryFn: () => api<JobRow[]>('/agreements', { auth: true }), enabled: on && tab === 'jobs', refetchInterval: 10_000 });
@@ -55,6 +57,7 @@ export default function Dashboard() {
           <div className="tile"><span>Active jobs</span><b>{s ? s.activeJobs : '…'}</b></div>
           <div className="tile"><span>Wallet</span><b style={{ fontSize: 18, paddingTop: 6 }} className="mono">{shortAddr(session.address)}</b></div>
         </div>
+        {me.data && !me.data.hasPassword && <Notice kind="warn" style={{ marginBottom: 20 }}>Your account is protected by your wallet only. <Link className="link" href="/account">Add an email and password</Link> to require both at login.</Notice>}
         {summary.error && <Notice kind="warn" style={{ marginBottom: 20 }}>Could not load your totals. {(summary.error as Error).message}</Notice>}
 
         <div className="tabs">{TABS.map((t) => <Link key={t.key} href={`/dashboard?tab=${t.key}`} className={`tab ${tab === t.key ? 'on' : ''}`}>{t.label}</Link>)}</div>
