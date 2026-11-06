@@ -5,6 +5,7 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { env } from '../env.js';
 import { escrowAbi, factoryAbi } from './abi.js';
+import { recordSignature } from '../lib/signatureAudit.js';
 
 export class ChainError extends Error {}
 
@@ -108,18 +109,22 @@ export const randomNonce = () => BigInt(Date.now()) * 1_000_000n + BigInt(Math.f
 
 export async function signVerdict(escrow: Address, agreementUuid: string, pass: boolean) {
   const nonce = randomNonce();
-  const sig = await verifierAccount().signTypedData({
+  const account = verifierAccount();
+  const sig = await account.signTypedData({
     domain: domain(escrow),
     types: { Verdict: [{ name: 'agreementId', type: 'bytes32' }, { name: 'result', type: 'uint8' }, { name: 'nonce', type: 'uint256' }] },
     primaryType: 'Verdict',
     message: { agreementId: agreementIdBytes(agreementUuid), result: pass ? 1 : 0, nonce },
   });
+  // Audit before the signature leaves this module: if the log cannot be written, no signature is released.
+  await recordSignature({ kind: 'verdict', agreementId: agreementUuid, escrow, signer: account.address, nonce, resultOrAmount: pass ? 'PASS' : 'FAIL', sig });
   return { sig, nonce };
 }
 
 export async function signDelegation(escrow: Address, agreementUuid: string, subAgent: Address, amount: bigint) {
   const nonce = randomNonce();
-  const sig = await verifierAccount().signTypedData({
+  const account = verifierAccount();
+  const sig = await account.signTypedData({
     domain: domain(escrow),
     types: {
       Delegation: [
@@ -130,5 +135,6 @@ export async function signDelegation(escrow: Address, agreementUuid: string, sub
     primaryType: 'Delegation',
     message: { agreementId: agreementIdBytes(agreementUuid), subAgent, amount, nonce },
   });
+  await recordSignature({ kind: 'delegation', agreementId: agreementUuid, escrow, signer: account.address, nonce, resultOrAmount: amount.toString(), sig });
   return { sig, nonce };
 }

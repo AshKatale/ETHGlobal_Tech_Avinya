@@ -53,6 +53,7 @@ export class Fixtures {
   async cleanup() {
     const A = this.agreementIds;
     if (A.length) {
+      await db.delete(schema.signatureAudit).where(inArray(schema.signatureAudit.agreementId, A));
       await db.delete(schema.a2aCalls).where(inArray(schema.a2aCalls.agreementId, A));
       await db.delete(schema.payments).where(inArray(schema.payments.agreementId, A));
       await db.delete(schema.submissions).where(inArray(schema.submissions.agreementId, A));

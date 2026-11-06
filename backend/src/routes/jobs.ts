@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { optionalAuth, requireAgent, requireUser, sha256 } from '../lib/auth.js';
@@ -128,6 +128,29 @@ export async function jobRoutes(app: FastifyInstance) {
       verdict: full ? (verdict ?? null) : publicVerdict(verdict),
       viewerAccess: full ? 'full' : 'public',
       disclaimer: 'Automated verification is not a professional audit.',
+    };
+  });
+
+  // Public audit trail (ADR-003): every verifier signature for this agreement (sha256 of the signature only), plus the
+  // public settlement facts. Nothing here is secret: the verdict signature, nonce and tx hash are on-chain.
+  app.get('/agreements/:id/audit', async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
+    const entries = await db.select().from(schema.signatureAudit).where(eq(schema.signatureAudit.agreementId, id)).orderBy(asc(schema.signatureAudit.createdAt));
+    const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
+    const [lastRun] = await db.select({ reportRoot: schema.verifications.reportRoot }).from(schema.verifications)
+      .where(and(eq(schema.verifications.agreementId, id), isNotNull(schema.verifications.reportRoot)))
+      .orderBy(desc(schema.verifications.createdAt)).limit(1);
+    const submission = await latestSubmission(id);
+    return {
+      agreementId: id,
+      escrowAddress: agreement.escrowAddress,
+      entries,
+      verdict: verdict ? { result: verdict.result, nonce: verdict.nonce, signature: verdict.verifierSig, settleTxHash: verdict.settleTxHash } : null,
+      settleTxHash: verdict?.settleTxHash ?? null,
+      reportRoot: lastRun?.reportRoot ?? null,
+      deliverableHash: submission?.deliverableHash ?? null,
     };
   });
 

@@ -205,3 +205,41 @@ describe.skipIf(!HAS_DB)('A2A only while funded', () => {
     await app.close();
   });
 });
+
+describe.skipIf(!HAS_DB)('signature audit log', () => {
+  it('signVerdict and signDelegation write one audit row each (sha256 of the signature only) and GET /audit serves them', async () => {
+    const actual = await vi.importActual<typeof import('./chain/client.js')>('./chain/client.js');
+    const { sigSha256 } = await import('./lib/signatureAudit.js');
+    const { createHash } = await import('node:crypto');
+    const app = await buildServer();
+    const u = await fx.user();
+    const ag = await fx.agent(u.id);
+    const agreement = await fx.agreement(u.id, ag.id, { status: 'submitted' });
+    const escrow = `0x${'ab'.repeat(20)}` as `0x${string}`;
+    await db.insert(schema.submissions).values({ agreementId: agreement.id, content: 'work', deliverableHash: 'deadbeef' });
+    await db.insert(schema.verifications).values({ agreementId: agreement.id, result: 'PASS', reportRoot: '0xroot' });
+
+    let signed = true;
+    let v: Awaited<ReturnType<typeof actual.signVerdict>> | undefined;
+    let d: Awaited<ReturnType<typeof actual.signDelegation>> | undefined;
+    try {
+      v = await actual.signVerdict(escrow, agreement.id, true);
+      d = await actual.signDelegation(escrow, agreement.id, `0x${'22'.repeat(20)}`, 250n);
+    } catch (e) { if (/VERIFIER_PRIVATE_KEY/.test((e as Error).message)) signed = false; else throw e; }
+    if (!signed || !v || !d) return; // no verifier key in this environment: local signing cannot run
+
+    await db.insert(schema.verdicts).values({ agreementId: agreement.id, result: 'PASS', verifierSig: v.sig, nonce: v.nonce, settleTxHash: '0xsettle' });
+    const res = await app.inject({ method: 'GET', url: `/agreements/${agreement.id}/audit` }); // public: no auth
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.entries).toHaveLength(2);
+    expect(body.entries.map((e: { kind: string }) => e.kind)).toEqual(['verdict', 'delegation']);
+    expect(body.entries[0]).toMatchObject({ resultOrAmount: 'PASS', escrowAddress: escrow, sigSha256: sigSha256(v.sig), nonce: v.nonce.toString() });
+    expect(body.entries[0].sigSha256).toBe(createHash('sha256').update(v.sig).digest('hex'));
+    expect(body.entries[1]).toMatchObject({ resultOrAmount: '250', sigSha256: sigSha256(d.sig) });
+    expect(res.body).not.toContain(d.sig); // delegation signature itself is not stored or served
+    expect(body).toMatchObject({ settleTxHash: '0xsettle', reportRoot: '0xroot', deliverableHash: 'deadbeef', verdict: { result: 'PASS', settleTxHash: '0xsettle' } });
+    expect((await app.inject({ method: 'GET', url: `/agreements/00000000-0000-4000-8000-000000000000/audit` })).statusCode).toBe(404);
+    await app.close();
+  });
+});
