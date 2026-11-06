@@ -5,5 +5,18 @@
     "deployer": "0x875fc8473b5507E78d60B52b171124a55e3129FC",
     "verifier": "0x2d879491dA59A0F5AA95ef719f3d3c679c08E37F",
     "deployTx": "0x96d9a6c0ea9c3cb4966ab20572a13eedf3076da48ce8e94c579818e987be6c47"
+  },
+  "hederaTestnetV2": {
+    "chainId": 296,
+    "AgreementFactoryV2": "0xf0C0680958Eb497e1ea642F16Ee0513B4320E15b",
+    "contractId": "0.0.11343314",
+    "deployer": "0x875fc8473b5507E78d60B52b171124a55e3129FC",
+    "verifier": "0x2d879491dA59A0F5AA95ef719f3d3c679c08E37F",
+    "deployTx": "0x71b656fba45d21abe86ddc170e5747e18100b9c65336aec7c1762b9ea6b19b18",
+    "smokeTx": "0x4c4c62cad7cc0081a1f1baf86cd95b888afcd5243ef3e0e3c7ce9d7d2e3ffc43",
+    "smokeEscrow": "0xdb7CD42000df2137f8C38eE1FA379b8429B943CD",
+    "maxDelegatedBps": 3000,
+    "reviewWindow": 259200,
+    "minDeadline": 900
   }
 }
