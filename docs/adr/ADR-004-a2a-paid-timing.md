@@ -26,3 +26,9 @@ Easier: no free work for a reverted delegation. Harder: two states to reconcile 
 ## Unverified assumptions
 - `waitForTransactionReceipt` against Hashio returns reliably within ~10 s [VERIFY: run one delegation on testnet and time it].
 - Hashio may return a receipt for a reverted contract call as `status: reverted` and not throw [VERIFY on testnet].
+
+## Implementation note ($D, read-only review of backend)
+Mostly implemented (Option B):
+- `chain/client.ts` waits for the receipt and throws when `status != success`, so a reverted delegation never reaches the callee. [implemented]
+- `chain/indexer.ts` decodes `Delegated` (`applyDelegated`), inserts the `payments` row `confirmed` idempotently (unique index on a2a payments, same tx hash as the route) and heals a call wrongly marked `failed` ("Payment failed") back to `paid`. [implemented]
+Differences from the text above: `routes/a2a.ts` still inserts the `payments` row inline (after receipt success) with `onConflictDoNothing`, instead of leaving it to the indexer alone; this is idempotent and receipt-confirmed, so accepted as equivalent for the demo. `reserveA2aCall` moves the call to `paid` under a per-agreement advisory lock BEFORE the transaction is sent (budget reservation, closes the cap race); a failed send sets it back to `failed`. So `a2a_calls.paid` means "reserved/in flight" until the receipt, and `payments` is the confirmed record. Still [VERIFY] on testnet: receipt latency and reverted-receipt behaviour on Hashio.

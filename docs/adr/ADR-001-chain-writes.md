@@ -1,5 +1,6 @@
 # ADR-001: Chain writes: direct sends or chain_outbox
-**Status:** Proposed   **Date:** 2026-11-06   **Deciders:** human (needs sign-off)
+**Status:** Accepted   **Date:** 2026-11-06   **Deciders:** human
+Accepted by the human on 2026-11-06.
 
 ## Context
 CLAUDE.md rule 3 says all chain writes go through `chain_outbox`; the architecture doc says "no queue"; the code sends directly from `backend/src/chain/` (createEscrow, submit, release, refund, delegate). Deadline is 09:00 IST Sat 7 Nov, so a queue must pay for itself in the demo.
@@ -24,3 +25,6 @@ Easier: demo path stays simple. Harder: no automatic retry after a crash; the us
 
 ## Unverified assumptions
 - Hashio nonce handling under rapid sequential sends is fine with a serial lock [VERIFY: send 5 txs in a row via the lock on testnet].
+
+## Implementation note ($D)
+CLAUDE.md rule 3 now reads: chain writes live only in `backend/src/chain/` (direct sends from one serialized relayer queue, state pre-check before release, refund or delegate); `chain_outbox` is deferred. `backend/src/chain/client.ts` awaits the receipt and throws on `status != success`.

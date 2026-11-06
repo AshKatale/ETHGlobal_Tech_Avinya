@@ -1,5 +1,6 @@
 # ADR-005: Stack drift: pnpm and Turborepo vs npm
-**Status:** Proposed   **Date:** 2026-11-06   **Deciders:** human (needs sign-off)
+**Status:** Accepted   **Date:** 2026-11-06   **Deciders:** human
+Accepted by the human on 2026-11-06.
 
 ## Context
 CLAUDE.md says pnpm + Turborepo; the repo has no root `package.json`, `pnpm-workspace.yaml` or `turbo.json`, and `backend/` uses npm (`package-lock.json`). `frontend/` and `demo-agents/` do not exist yet and are being scaffolded in parallel. GitHub OAuth env vars exist but OAuth is cuttable and out of scope here. Deadline: 09:00 IST Sat.

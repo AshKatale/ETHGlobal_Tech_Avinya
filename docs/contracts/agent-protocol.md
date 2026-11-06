@@ -1,6 +1,6 @@
 # Agent protocol (backend <-> demo agent)
 
-Owner: architect. Consumers: backend-engineer, demo-agents-engineer, qa-engineer. Status: v1, 2026-11-06.
+Owner: architect. Consumers: backend-engineer, demo-agents-engineer, qa-engineer. Status: v1.1, 2026-11-06 (implementation markers updated from backend/src/lib/agentClient.ts, chain/indexer.ts, routes/a2a.ts).
 Legend: **[implemented]** exists in `backend/`; **[planned]** specified here, not built yet.
 
 Conventions: JSON over HTTP, `content-type: application/json`. Money is a tinybar **string** (`"150000000"` = 1.5 HBAR), never a number. Ids are UUID strings. Errors always `{ "error": "<message>" }` with an HTTP status (see section 5).
@@ -10,18 +10,18 @@ Conventions: JSON over HTTP, `content-type: application/json`. Money is a tinyba
 | Direction | Credential | Status |
 |---|---|---|
 | Agent -> backend (`/agreements/:id/submit`, `/a2a/quote`, `/a2a/call`, `POST /requests/:id/quotes`) | header `x-agent-key: <raw key>`; backend compares `sha256(key)` to `agents.apiKeyHash` | [implemented] |
-| Backend -> agent (`/quote`, `/tasks`, `/a2a`) | header `x-backend-key: <shared secret>` from env `AGENT_CALLBACK_SECRET`; agent rejects 401 if missing or different | [planned] |
+| Backend -> agent (`/quote`, `/tasks`, `/a2a`) | header `x-backend-key: <shared secret>` from env `AGENT_CALLBACK_SECRET`; agent rejects 401 if missing or different | backend side [implemented]: sent when `AGENT_CALLBACK_SECRET` is set; agent-side check [planned] |
 
-Until the planned header exists, agents must still accept calls without it (demo only); agents SHOULD check it when `AGENT_CALLBACK_SECRET` is set in their env. Agents are reached at `agents.endpointUrl` (trailing slash trimmed). The backend must refuse private/loopback endpoint hosts in production (SSRF; see security findings), except for the local demo ports 4101 and 4102.
+While `AGENT_CALLBACK_SECRET` is unset the header is not sent, so agents must still accept calls without it (demo only); agents SHOULD check it when `AGENT_CALLBACK_SECRET` is set in their env. Agents are reached at `agents.endpointUrl` (trailing slash trimmed). The backend must refuse private/loopback endpoint hosts in production (SSRF; see security findings), except for the local demo ports 4101 and 4102.
 
 ## 2. Backend -> agent endpoints (the agent implements these)
 
-### POST /quote  [planned: nothing in the backend calls it yet]
+### POST /quote  [implemented: `askForQuote`/`solicitQuotes` in `lib/agentClient.ts`, 15 s timeout, no retry, through the SSRF guard; the backend accepts `etaHours` as optional and ignores bad answers; which route triggers `solicitQuotes` [VERIFY]]
 Request: `{ "requirements": string }`
 Response 200: `{ "priceTinybar": string, "etaHours": number }` (integer >= 1)
 Timeout: backend waits 15 s; no retry (a failed quote just means the agent is not offered). The agent must not call an LLM for this; a fixed or formula price is fine.
 
-### POST /tasks  [planned: nothing in the backend calls it yet; backend calls it once after the indexed `Funded` event]
+### POST /tasks  [implemented: `dispatchAgreement` in `lib/agentClient.ts`, called in the background by the indexer after the indexed `Funded` event; 5 s timeout, retries 5/15/45 s on network error, timeout or 5xx, 4xx or SSRF refusal is final; failure stored in `agreements.dispatch_error`, success sets `dispatched_at`]
 Request: `{ "agreementId": uuid, "requirements": string }`
 Response: **202** `{ "accepted": true }` immediately (within 5 s). The agent then works in the background and delivers by calling the backend:
 
@@ -35,7 +35,7 @@ Retry and idempotency:
 - The agent retries `/submit` on network error or 5xx (3 tries, 2 s apart). A 409 is final: stop, do not resubmit (resubmission while `verifying` is a known backend gap, so do not rely on it).
 - Work deadline: the agent should submit within `etaHours` of its quote; the on-chain deadline is the hard limit (`refundAfterDeadline` needs state `Funded`).
 
-### POST /a2a  [implemented caller side in `backend/src/routes/a2a.ts`; agent side planned]
+### POST /a2a  [implemented caller side in `backend/src/routes/a2a.ts`, sends `x-backend-key` when configured; agent side planned]
 Sent by the backend only after it has paid this agent out of the caller's escrow (`JobEscrow.delegate`). The agent here is the **callee** (e.g. the Static Auditor).
 Request: `{ "agreementId": uuid, "callId": uuid, "input": <any JSON> }`
 Response 200: any JSON (or plain text; the backend tries `JSON.parse`, else forwards the text). The backend relays it to the caller as `{ "status": "done", "output": <that JSON> }`.
@@ -55,16 +55,16 @@ Both need `x-agent-key` of the caller, who must be the agent on the agreement, a
 - 200 `{ "status": "done", "output": any }`
 - 404 call not found or not yours; 409 `Call is <status>` (only `quoted` can be called; each `callId` is single use); 403 `Budget exceeded` (re-checked at call time); 400 callee has no endpoint or agreement has no escrow; 502 payment failed or callee failed.
 - The caller should allow **~120 s** for this request (payment tx plus the callee's 90 s).
-- `paid` currently means the delegate tx receipt returned; see ADR-004 for moving it to the indexed `Delegated` event.
+- `paid` is set when the budget is reserved (before the tx); the delegate tx receipt must be `success` before the callee is called, and the indexer's `Delegated` handler confirms the payment and heals a wrongly failed call (ADR-004) [implemented].
 
 `GET /agreements/:id/a2a` returns the `a2a_calls` rows (no auth) [implemented].
 
 ## 4. Demo flow in order
 
 1. Lister registers the agent with `endpointUrl` and gets a one-time `x-agent-key` [implemented].
-2. Backend calls `POST /quote` when a request opens [planned], or the agent/lister posts `POST /requests/:id/quotes` itself with `x-agent-key` [implemented].
-3. Client accepts, escrow is created, client funds it; the indexer sees `Funded` [planned indexer].
-4. Backend calls `POST /tasks` [planned]. Agent 1 may do A2A (section 3), then submits.
+2. Backend calls `POST /quote` on listed agents [implemented in agentClient; trigger [VERIFY]], or the agent/lister posts `POST /requests/:id/quotes` itself with `x-agent-key` [implemented].
+3. Client accepts, escrow is created, client funds it; the indexer sees `Funded` [implemented].
+4. Backend calls `POST /tasks` [implemented]. Agent 1 may do A2A (section 3), then submits.
 5. Backend verifies, signs the verdict, release or refund.
 
 ## 5. Error shape and status codes

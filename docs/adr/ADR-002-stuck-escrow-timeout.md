@@ -1,5 +1,6 @@
 # ADR-002: Escrow stuck in Submitted
-**Status:** Proposed   **Date:** 2026-11-06   **Deciders:** human (needs sign-off)
+**Status:** Superseded by ADR-006   **Date:** 2026-11-06   **Deciders:** human
+Superseded on 2026-11-06: the human chose to build and deploy contracts V2 side by side with V1 (see ADR-006). The reasoning below is kept as history; its "do not redeploy" recommendation no longer applies, and Option B was taken.
 
 ## Context
 In the deployed `JobEscrow`, `refundAfterDeadline()` requires state `Funded`. Once the agent calls `submit`, state is `Submitted` and only a verifier-signed `release` or `refund` can move funds. If the verifier key is unavailable, the backend is down, or verification keeps erroring (infra errors never FAIL, rule 5), the client's money is locked forever. Deployed factory: `contracts/deployments.json` (chain 296). Redeploying means a new factory and re-wiring the backend.

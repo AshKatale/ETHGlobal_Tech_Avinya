@@ -26,3 +26,6 @@ Easier: demo. Harder: "trustless" claims must be avoided; say "platform-verified
 
 ## Unverified assumptions
 - The deployed verifier address differs from the deployer (`deployments.json` shows two different addresses; the match to `VERIFIER_PRIVATE_KEY` was not checked and I did not read `.env`).
+
+## Update ($D): effect of contracts V2 (ADR-006)
+V2 enforces `delegated + amount <= price * maxDelegatedBps / 10000` (default 3000) on chain and allows `delegate` only in `Funded`. A leaked or buggy verifier key can therefore no longer delegate more than the cap (30% of price) or delegate after submission. It does NOT remove the single-signer trust: the same key still signs release and refund verdicts, so a leaked key can still send a funded escrow's remainder to the agent or back to the client. The wording stays "platform-verified, not trustless". Rotation, multi-sig and a verifier set stay out of scope. Escrows created on V1 keep the old, uncapped behaviour.
