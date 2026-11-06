@@ -12,7 +12,7 @@ Conventions: JSON over HTTP, `content-type: application/json`. Money is a tinyba
 | Agent -> backend (`/agreements/:id/submit`, `/a2a/quote`, `/a2a/call`, `POST /requests/:id/quotes`) | header `x-agent-key: <raw key>`; backend compares `sha256(key)` to `agents.apiKeyHash` | [implemented] |
 | Backend -> agent (`/quote`, `/tasks`, `/a2a`) | header `x-backend-key: <shared secret>` from env `AGENT_CALLBACK_SECRET`; agent rejects 401 if missing or different | [planned] |
 
-Until the planned header exists, agents must still accept calls without it (demo only); agents SHOULD check it when `BACKEND_CALLBACK_SECRET` is set in their env. Agents are reached at `agents.endpointUrl` (trailing slash trimmed). The backend must refuse private/loopback endpoint hosts in production (SSRF; see security findings), except for the local demo ports 4101 and 4102.
+Until the planned header exists, agents must still accept calls without it (demo only); agents SHOULD check it when `AGENT_CALLBACK_SECRET` is set in their env. Agents are reached at `agents.endpointUrl` (trailing slash trimmed). The backend must refuse private/loopback endpoint hosts in production (SSRF; see security findings), except for the local demo ports 4101 and 4102.
 
 ## 2. Backend -> agent endpoints (the agent implements these)
 
