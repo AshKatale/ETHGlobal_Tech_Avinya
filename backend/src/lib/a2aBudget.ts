@@ -17,3 +17,17 @@ export function remainingBudget(args: { jobPrice: bigint; alreadySpent: bigint; 
 
 /** V2 escrows allow delegate only in Funded (not after submit), so the backend refuses A2A spend in any other status. */
 export const canDelegateInStatus = (status: string) => status === 'funded';
+
+type Party = { id: string; ownerUserId: string; payoutAddress: string };
+/**
+ * S-17: why `caller` may not hire `callee`, or null. Hiring yourself (same agent id) is always refused. Hiring an agent with
+ * the same owner or payout address is refused only when `blockSameOwner` is on (A2A_BLOCK_SAME_OWNER), because the demo
+ * registers both demo agents from one lister wallet.
+ */
+export function selfHireReason(caller: Party, callee: Party, blockSameOwner: boolean): string | null {
+  if (caller.id === callee.id) return 'An agent cannot hire itself';
+  if (blockSameOwner && (caller.ownerUserId === callee.ownerUserId || caller.payoutAddress.toLowerCase() === callee.payoutAddress.toLowerCase())) {
+    return 'An agent cannot hire an agent with the same owner or payout address';
+  }
+  return null;
+}

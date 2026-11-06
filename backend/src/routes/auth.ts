@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, lt } from 'drizzle-orm';
 import { isAddress, verifyMessage } from 'viem';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
@@ -10,6 +10,8 @@ export async function authRoutes(app: FastifyInstance) {
     const { address } = z.object({ address: z.string() }).parse(req.body);
     if (!isAddress(address)) return reply.code(400).send({ error: 'Invalid address' });
     const addr = address.toLowerCase();
+    // S-19: purge expired nonces so the table cannot grow without bound.
+    void db.delete(schema.authNonces).where(lt(schema.authNonces.expiresAt, new Date())).catch(() => {});
     const nonce = newToken(16);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await db.insert(schema.authNonces).values({ address: addr, nonce, expiresAt });
@@ -42,10 +44,13 @@ export async function authRoutes(app: FastifyInstance) {
     });
     if (!ok) return reply.code(401).send({ error: 'Bad signature' });
 
-    await db
+    // S-19: atomic claim, so two parallel verifies with the same nonce cannot both create a session.
+    const claimed = await db
       .update(schema.authNonces)
       .set({ used: true })
-      .where(and(eq(schema.authNonces.address, addr), eq(schema.authNonces.nonce, body.nonce)));
+      .where(and(eq(schema.authNonces.address, addr), eq(schema.authNonces.nonce, body.nonce), eq(schema.authNonces.used, false)))
+      .returning({ nonce: schema.authNonces.nonce });
+    if (claimed.length === 0) return reply.code(400).send({ error: 'Unknown, used or expired nonce' });
 
     let [user] = await db.select().from(schema.users).where(eq(schema.users.address, addr)).limit(1);
     if (!user) [user] = await db.insert(schema.users).values({ address: addr }).returning();

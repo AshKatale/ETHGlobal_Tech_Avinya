@@ -6,7 +6,7 @@ import { optionalAuth, requireAgent } from '../lib/auth.js';
 import { canViewPrivate, publicCall } from '../lib/access.js';
 import { matchA2aTxHashes } from '../lib/enrich.js';
 import { env } from '../env.js';
-import { canDelegateInStatus, remainingBudget, withinBudget } from '../lib/a2aBudget.js';
+import { canDelegateInStatus, remainingBudget, selfHireReason, withinBudget } from '../lib/a2aBudget.js';
 import { reserveA2aCall } from '../lib/a2aReserve.js';
 import { assertSafeUrl, safeFetch } from '../lib/ssrf.js';
 import { delegateOnChain, signDelegation } from '../chain/client.js';
@@ -43,7 +43,7 @@ export async function a2aRoutes(app: FastifyInstance) {
 
     let blockedReason: string | null = null;
     if (ev.callee.status !== 'listed') blockedReason = 'Callee agent is not listed';
-    else if (ev.callee.id === req.agent!.id) blockedReason = 'An agent cannot hire itself';
+    else if (selfHireReason(req.agent!, ev.callee, env.A2A_BLOCK_SAME_OWNER === 'true')) blockedReason = selfHireReason(req.agent!, ev.callee, env.A2A_BLOCK_SAME_OWNER === 'true');
     else if (ev.depth > MAX_DEPTH) blockedReason = `Max depth of ${MAX_DEPTH} hops exceeded`;
     else if (!withinBudget({ jobPrice: ev.jobPrice, alreadySpent: ev.alreadySpent, price: ev.price, maxPercent: env.A2A_MAX_PERCENT })) {
       blockedReason = `Would exceed the ${env.A2A_MAX_PERCENT}% A2A budget for this job`;
@@ -78,6 +78,9 @@ export async function a2aRoutes(app: FastifyInstance) {
     if ('error' in ev) return reply.code(400).send({ error: ev.error });
     if (!ev.callee.endpointUrl) return reply.code(400).send({ error: 'Callee agent has no endpoint URL' });
     if (!ev.agreement.escrowAddress) return reply.code(400).send({ error: 'Agreement has no escrow' });
+    // Re-check at call time (the callee may have been delisted, or the quote made under older rules).
+    const callTimeBlock = ev.callee.status !== 'listed' ? 'Callee agent is not listed' : selfHireReason(req.agent!, ev.callee, env.A2A_BLOCK_SAME_OWNER === 'true');
+    if (callTimeBlock) return reply.code(403).send({ error: callTimeBlock });
     // Refuse an unsafe callee URL before any money moves.
     try { await assertSafeUrl(ev.callee.endpointUrl); } catch (e) {
       return reply.code(400).send({ error: `Callee endpoint refused: ${(e as Error).message}` });

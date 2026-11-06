@@ -34,7 +34,7 @@ export const publicVerification = (v: Verification | undefined | null) => {
 };
 
 type Call = typeof schema.a2aCalls.$inferSelect;
-const OUR_REASONS = /^(Callee agent is not listed|An agent cannot hire itself|Max depth of|Would exceed the|Budget exceeded|Payment failed$|Callee failed after payment)/;
+const OUR_REASONS = /^(Callee agent is not listed|An agent cannot hire|Max depth of|Would exceed the|Budget exceeded|Payment failed$|Callee failed after payment)/;
 /** Our own fixed reasons stay; anything else (older rows could hold upstream text) is dropped. */
 export const publicBlockedReason = (r: string | null) => (r && OUR_REASONS.test(r) ? r : null);
 export const publicCall = <T extends Call>(c: T): T => ({ ...c, blockedReason: publicBlockedReason(c.blockedReason) });

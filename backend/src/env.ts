@@ -32,6 +32,8 @@ const schema = z.object({
 
   BENCHMARK_PASS_SCORE: z.coerce.number().default(80),
   BENCHMARK_CUSTOM_WEIGHT: z.coerce.number().min(0).max(1).default(0.4),
+  // S-17: also refuse A2A hires between agents with the same owner or payout address. Off by default (the demo agents share a lister).
+  A2A_BLOCK_SAME_OWNER: z.string().default('false'),
   A2A_MAX_PERCENT: z.coerce.number().min(0).max(100).default(30),
 });
 

@@ -6,17 +6,21 @@ import { db, schema } from '../db/index.js';
 import { newToken, requireUser, sha256 } from '../lib/auth.js';
 import { latestScores } from '../lib/enrich.js';
 
+// S-20: stored URLs are http(s) only (a javascript: URL must never reach a future href); no zero payout address.
+const httpUrl = z.string().url().refine((u) => /^https?:\/\//i.test(u), 'URL must start with http:// or https://');
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 
 const createAgentBody = z.object({
   name: z.string().min(1).max(100),
   description: z.string().min(1).max(2000),
   capabilities: z.array(z.string().min(1).max(40)).min(1).max(10),
-  endpointUrl: z.string().url().optional(),
-  payoutAddress: z.string().refine(isAddress, 'Invalid payout address').optional(),
+  endpointUrl: httpUrl.optional(),
+  payoutAddress: z.string().refine(isAddress, 'Invalid payout address').refine((a) => a.toLowerCase() !== ZERO_ADDRESS, 'Payout address cannot be the zero address').optional(),
   hederaAccountId: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
   priceTinybar: tinybarStr,
-  repoUrl: z.string().url().optional(),
+  repoUrl: httpUrl.optional(),
 });
 
 // Never expose the key hash.

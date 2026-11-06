@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canDelegateInStatus, remainingBudget, withinBudget } from './a2aBudget.js';
+import { canDelegateInStatus, remainingBudget, selfHireReason, withinBudget } from './a2aBudget.js';
 
 describe('a2a budget', () => {
   const jobPrice = 1_000_000_000n; // 10 HBAR
@@ -15,5 +15,13 @@ describe('a2a budget', () => {
   it('delegates only while funded (V2 rule)', () => {
     expect(canDelegateInStatus('funded')).toBe(true);
     for (const s of ['agreed', 'submitted', 'verifying', 'released', 'refunded']) expect(canDelegateInStatus(s), s).toBe(false);
+  });
+  it('self-hire: same id always; same owner or payout only when enabled', () => {
+    const a = { id: 'a', ownerUserId: 'u1', payoutAddress: '0xAA' };
+    expect(selfHireReason(a, a, false)).toMatch(/itself/);
+    expect(selfHireReason(a, { id: 'b', ownerUserId: 'u1', payoutAddress: '0xbb' }, false)).toBeNull();
+    expect(selfHireReason(a, { id: 'b', ownerUserId: 'u1', payoutAddress: '0xbb' }, true)).toMatch(/same owner/);
+    expect(selfHireReason(a, { id: 'b', ownerUserId: 'u2', payoutAddress: '0xaa' }, true)).toMatch(/payout/);
+    expect(selfHireReason(a, { id: 'b', ownerUserId: 'u2', payoutAddress: '0xbb' }, true)).toBeNull();
   });
 });

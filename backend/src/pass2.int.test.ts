@@ -323,3 +323,37 @@ describe.skipIf(!HAS_DB)('refund-timeout route (stubbed chain; NOT tested agains
     await app.close();
   });
 });
+
+describe.skipIf(!HAS_DB)('S-19 / S-20 low items', () => {
+  it('agent registration refuses non-http URLs and the zero payout address', async () => {
+    const app = await buildServer();
+    const u = await fx.user();
+    const base = { name: '[qa] bad', description: '[qa]', capabilities: ['qa'], priceTinybar: '1' };
+    const post = (extra: object) => app.inject({ method: 'POST', url: '/agents', headers: auth(u.token), payload: { ...base, ...extra } });
+    expect((await post({ repoUrl: 'javascript:alert(1)' })).statusCode).toBe(400);
+    expect((await post({ endpointUrl: 'ftp://example.com' })).statusCode).toBe(400);
+    expect((await post({ payoutAddress: '0x0000000000000000000000000000000000000000' })).statusCode).toBe(400);
+    const ok = await post({ endpointUrl: 'https://agent.example', repoUrl: 'https://github.com/a/b' });
+    expect(ok.statusCode).toBe(201);
+    fx.agentIds.push(ok.json().agent.id);
+    await app.close();
+  });
+
+  it('two parallel /auth/verify with one nonce create one session', async () => {
+    const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts');
+    const { loginMessage } = await import('./lib/auth.js');
+    const app = await buildServer();
+    const account = privateKeyToAccount(generatePrivateKey());
+    const n = (await app.inject({ method: 'POST', url: '/auth/nonce', payload: { address: account.address } })).json();
+    const signature = await account.signMessage({ message: loginMessage(account.address, n.nonce) });
+    const go = () => app.inject({ method: 'POST', url: '/auth/verify', payload: { address: account.address, nonce: n.nonce, signature } });
+    const res = await Promise.all([go(), go(), go()]);
+    expect(res.filter((r) => r.statusCode === 200)).toHaveLength(1);
+    expect(res.filter((r) => r.statusCode === 400)).toHaveLength(2);
+    const token = res.find((r) => r.statusCode === 200)!.json();
+    // tidy: this user was created by the login flow, not by Fixtures
+    await db.delete(schema.sessions).where(eq(schema.sessions.id, token.token));
+    await db.delete(schema.users).where(eq(schema.users.id, token.user.id));
+    await app.close();
+  });
+});
