@@ -243,3 +243,44 @@ describe.skipIf(!HAS_DB)('signature audit log', () => {
     await app.close();
   });
 });
+
+describe.skipIf(!HAS_DB)('UI field additions', () => {
+  it('latestScore, quote agent names, a2a names and txHash, timestamps, /config', async () => {
+    const app = await buildServer();
+    const u = await fx.user();
+    const caller = await fx.agent(u.id, { status: 'listed' });
+    const callee = await fx.agent(u.id, { status: 'listed' });
+    const [bench] = await db.insert(schema.benchmarkRuns).values({ agentId: caller.id, repoUrl: 'https://github.com/x/y', status: 'passed', score: '91.50' }).returning();
+    await db.update(schema.agents).set({ latestBenchmarkId: bench.id }).where(eq(schema.agents.id, caller.id));
+
+    const list = (await app.inject({ method: 'GET', url: '/agents' })).json() as { id: string; latestScore: string | null }[];
+    expect(list.find((a) => a.id === caller.id)?.latestScore).toBe('91.50');
+    expect(list.find((a) => a.id === callee.id)?.latestScore).toBeNull();
+    expect((await app.inject({ method: 'GET', url: `/agents/${caller.id}` })).json().agent.latestScore).toBe('91.50');
+
+    const agreement = await fx.agreement(u.id, caller.id, { price: '1000', status: 'funded' });
+    const r = (await app.inject({ method: 'GET', url: `/requests/${agreement.requestId}` })).json();
+    expect(r.quotes[0]).toMatchObject({ agentName: caller.name, latestScore: '91.50' });
+
+    await db.insert(schema.a2aCalls).values({ agreementId: agreement.id, callerAgentId: caller.id, calleeAgentId: callee.id, priceTinybar: '200', status: 'done' });
+    await db.insert(schema.payments).values({ agreementId: agreement.id, kind: 'a2a', amountTinybar: '200', txHash: '0xqa-a2a-tx', status: 'confirmed' });
+    await db.insert(schema.submissions).values({ agreementId: agreement.id, content: 'w', deliverableHash: 'h' });
+    await db.insert(schema.payments).values({ agreementId: agreement.id, kind: 'release', amountTinybar: '800', txHash: '0xrel', status: 'confirmed' });
+    const calls = (await app.inject({ method: 'GET', url: `/agreements/${agreement.id}/a2a` })).json();
+    expect(calls[0]).toMatchObject({ callerName: caller.name, calleeName: callee.name, txHash: '0xqa-a2a-tx' });
+
+    const ag = (await app.inject({ method: 'GET', url: `/agreements/${agreement.id}` })).json();
+    expect(ag.a2aMaxPercent).toBe(30);
+    expect(ag.timestamps.submittedAt).toBeTruthy();
+    expect(ag.timestamps.settledAt).toBeTruthy();
+    expect(ag.timestamps).toHaveProperty('fundedAt');
+
+    const cfg = (await app.inject({ method: 'GET', url: '/config' })).json();
+    expect(cfg).toMatchObject({ a2aMaxPercent: 30, minDeadlineMinutes: 15, defaultDeadlineDays: 7 });
+
+    const mine = (await app.inject({ method: 'GET', url: '/requests?mine=true', headers: auth(u.token) })).json() as { clientUserId: string }[];
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((x) => x.clientUserId === u.id)).toBe(true);
+    await app.close();
+  });
+});

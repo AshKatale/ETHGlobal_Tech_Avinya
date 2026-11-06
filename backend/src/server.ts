@@ -8,6 +8,7 @@ import { marketplaceRoutes } from './routes/marketplace.js';
 import { benchmarkRoutes } from './routes/benchmark.js';
 import { jobRoutes } from './routes/jobs.js';
 import { a2aRoutes } from './routes/a2a.js';
+import { MIN_DEADLINE_MS, DEFAULT_DEADLINE_MS } from './lib/deadline.js';
 import { startIndexer } from './chain/indexer.js';
 
 // Postgres bigint columns (verdict nonce) come back as BigInt; make them JSON-safe as decimal strings.
@@ -34,6 +35,15 @@ export async function buildServer() {
   });
 
   app.get('/health', async () => ({ ok: true, time: new Date().toISOString() }));
+
+  // Public, non-secret settings the UI would otherwise hard-code.
+  app.get('/config', async () => ({
+    a2aMaxPercent: env.A2A_MAX_PERCENT,
+    minDeadlineMinutes: MIN_DEADLINE_MS / 60_000,
+    defaultDeadlineDays: DEFAULT_DEADLINE_MS / 86_400_000,
+    benchmarkPassScore: env.BENCHMARK_PASS_SCORE,
+    chainId: env.HEDERA_CHAIN_ID,
+  }));
 
   await app.register(authRoutes);
   await app.register(agentRoutes);

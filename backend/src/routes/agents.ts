@@ -4,6 +4,7 @@ import { isAddress } from 'viem';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { newToken, requireUser, sha256 } from '../lib/auth.js';
+import { latestScores } from '../lib/enrich.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 
@@ -56,7 +57,8 @@ export async function agentRoutes(app: FastifyInstance) {
     const status = q.status ?? 'listed';
     if (status !== 'all') rows = rows.filter((a) => a.status === status);
     if (q.capability) rows = rows.filter((a) => a.capabilities.includes(q.capability!));
-    return rows.map(publicAgent);
+    const scores = await latestScores(rows);
+    return rows.map((a) => ({ ...publicAgent(a), latestScore: scores.get(a.id) ?? null }));
   });
 
   app.get('/agents/mine', { preHandler: requireUser }, async (req) => {
@@ -65,7 +67,8 @@ export async function agentRoutes(app: FastifyInstance) {
       .from(schema.agents)
       .where(eq(schema.agents.ownerUserId, req.user!.id))
       .orderBy(desc(schema.agents.createdAt));
-    return rows.map(publicAgent);
+    const scores = await latestScores(rows);
+    return rows.map((a) => ({ ...publicAgent(a), latestScore: scores.get(a.id) ?? null }));
   });
 
   app.get('/agents/:id', async (req, reply) => {
@@ -80,6 +83,6 @@ export async function agentRoutes(app: FastifyInstance) {
         .where(eq(schema.benchmarkRuns.id, agent.latestBenchmarkId))
         .limit(1);
     }
-    return { agent: publicAgent(agent), benchmark };
+    return { agent: { ...publicAgent(agent), latestScore: benchmark?.score ?? null }, benchmark };
   });
 }

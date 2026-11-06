@@ -64,6 +64,7 @@ export class Fixtures {
     if (this.requestIds.length) await db.delete(schema.quotes).where(inArray(schema.quotes.requestId, this.requestIds));
     if (this.agentIds.length) await db.delete(schema.quotes).where(inArray(schema.quotes.agentId, this.agentIds));
     if (this.requestIds.length) await db.delete(schema.requests).where(inArray(schema.requests.id, this.requestIds));
+    if (this.agentIds.length) await db.delete(schema.benchmarkRuns).where(inArray(schema.benchmarkRuns.agentId, this.agentIds));
     if (this.agentIds.length) await db.delete(schema.agents).where(inArray(schema.agents.id, this.agentIds));
     for (const t of this.sessionIds) await db.delete(schema.sessions).where(eq(schema.sessions.id, t));
     if (this.userIds.length) await db.delete(schema.users).where(inArray(schema.users.id, this.userIds));

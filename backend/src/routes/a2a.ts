@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { optionalAuth, requireAgent } from '../lib/auth.js';
 import { canViewPrivate, publicCall } from '../lib/access.js';
+import { matchA2aTxHashes } from '../lib/enrich.js';
 import { env } from '../env.js';
 import { canDelegateInStatus, remainingBudget, withinBudget } from '../lib/a2aBudget.js';
 import { reserveA2aCall } from '../lib/a2aReserve.js';
@@ -128,7 +129,14 @@ export async function a2aRoutes(app: FastifyInstance) {
   app.get('/agreements/:id/a2a', { preHandler: optionalAuth }, async (req) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
-    const calls = await db.select().from(schema.a2aCalls).where(eq(schema.a2aCalls.agreementId, id));
+    const rows = await db.select().from(schema.a2aCalls).where(eq(schema.a2aCalls.agreementId, id));
+    // Additive display fields: agent names and the delegate tx hash (matched from the payments table).
+    const ids = [...new Set(rows.flatMap((c) => [c.callerAgentId, c.calleeAgentId]))];
+    const names = ids.length ? await db.select({ id: schema.agents.id, name: schema.agents.name }).from(schema.agents).where(inArray(schema.agents.id, ids)) : [];
+    const nameOf = new Map(names.map((a) => [a.id, a.name]));
+    const pays = rows.length ? await db.select().from(schema.payments).where(eq(schema.payments.agreementId, id)) : [];
+    const tx = matchA2aTxHashes(rows, pays);
+    const calls = rows.map((c) => ({ ...c, callerName: nameOf.get(c.callerAgentId) ?? null, calleeName: nameOf.get(c.calleeAgentId) ?? null, txHash: tx.get(c.id) ?? null }));
     if (!agreement) return calls.map(publicCall); // keep the old behaviour (empty list) for an unknown id
     return (await canViewPrivate(req, agreement)) ? calls : calls.map(publicCall);
   });

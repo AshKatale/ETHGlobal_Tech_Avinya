@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { optionalAuth, requireAgent, requireUser } from '../lib/auth.js';
@@ -8,6 +8,8 @@ import { ensureEscrow } from '../chain/ops.js';
 import { latestSubmission } from '../lib/submissions.js';
 import { solicitQuotes } from '../lib/agentClient.js';
 import { deadlineError, defaultDeadline } from '../lib/deadline.js';
+import { agreementTimestamps, latestScores } from '../lib/enrich.js';
+import { env } from '../env.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 const idParam = z.object({ id: z.string().uuid() });
@@ -46,9 +48,11 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     return reply.code(201).send(row);
   });
 
-  app.get('/requests', async (req) => {
-    const q = z.object({ status: z.string().optional() }).parse(req.query);
-    const rows = await db.select().from(schema.requests).orderBy(desc(schema.requests.createdAt));
+  app.get('/requests', { preHandler: optionalAuth }, async (req) => {
+    const q = z.object({ status: z.string().optional(), mine: z.string().optional() }).parse(req.query);
+    let rows = await db.select().from(schema.requests).orderBy(desc(schema.requests.createdAt));
+    // ?mine=true with a valid session lists only the caller's own requests (anonymous callers get the public list).
+    if (q.mine === 'true' && req.user) rows = rows.filter((r) => r.clientUserId === req.user!.id);
     return q.status ? rows.filter((r) => r.status === q.status) : rows;
   });
 
@@ -56,7 +60,13 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, id)).limit(1);
     if (!request) return reply.code(404).send({ error: 'Request not found' });
-    const quotes = await db.select().from(schema.quotes).where(eq(schema.quotes.requestId, id));
+    const rawQuotes = await db.select().from(schema.quotes).where(eq(schema.quotes.requestId, id));
+    const agents = rawQuotes.length
+      ? await db.select().from(schema.agents).where(inArray(schema.agents.id, rawQuotes.map((qt) => qt.agentId)))
+      : [];
+    const scores = await latestScores(agents);
+    const nameOf = new Map(agents.map((a) => [a.id, a.name]));
+    const quotes = rawQuotes.map((qt) => ({ ...qt, agentName: nameOf.get(qt.agentId) ?? null, latestScore: scores.get(qt.agentId) ?? null }));
     return { request, quotes };
   });
 
@@ -160,7 +170,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       .limit(1);
     const submission = await latestSubmission(id);
     const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
-    const payments = await db.select().from(schema.payments).where(eq(schema.payments.agreementId, id));
+    const ts = await agreementTimestamps(agreement);
+    const payments = ts.payments;
     // S-09: submission content and raw error strings only for the client, the agent's owner or the agent itself.
     const full = await canViewPrivate(req, agreement);
     return {
@@ -170,6 +181,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       submission: full ? (submission ?? null) : publicSubmission(submission),
       verdict: full ? (verdict ?? null) : publicVerdict(verdict),
       payments,
+      timestamps: { fundedAt: ts.fundedAt, submittedAt: submission?.submittedAt ?? null, settledAt: ts.settledAt },
+      a2aMaxPercent: env.A2A_MAX_PERCENT,
       viewerAccess: full ? 'full' : 'public',
     };
   });
