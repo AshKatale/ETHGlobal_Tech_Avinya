@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { isAddress } from 'viem';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
@@ -82,7 +82,4 @@ export async function agentRoutes(app: FastifyInstance) {
     }
     return { agent: publicAgent(agent), benchmark };
   });
-
-  // Silence unused-import warnings for sql if the list grows server-side filters later.
-  void sql;
 }

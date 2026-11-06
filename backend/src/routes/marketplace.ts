@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent, requireUser } from '../lib/auth.js';
 import { ensureEscrow } from '../chain/ops.js';
+import { latestSubmission } from '../lib/submissions.js';
+import { solicitQuotes } from '../lib/agentClient.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 const idParam = z.object({ id: z.string().uuid() });
@@ -33,6 +35,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         deadlineAt: body.deadlineAt ? new Date(body.deadlineAt) : null,
       })
       .returning();
+    // Background: ask every listed agent with an endpoint for a quote. Failures are ignored.
+    void solicitQuotes(row.id).catch((e) => app.log.warn({ err: (e as Error).message }, 'quote solicitation failed'));
     return reply.code(201).send(row);
   });
 
@@ -131,7 +135,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       .from(schema.agents)
       .where(eq(schema.agents.id, agreement.agentId))
       .limit(1);
-    const [submission] = await db.select().from(schema.submissions).where(eq(schema.submissions.agreementId, id)).limit(1);
+    const submission = await latestSubmission(id);
     const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
     const payments = await db.select().from(schema.payments).where(eq(schema.payments.agreementId, id));
     return { agreement, request, agent, submission: submission ?? null, verdict: verdict ?? null, payments };

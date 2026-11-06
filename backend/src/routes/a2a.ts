@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent } from '../lib/auth.js';
 import { env } from '../env.js';
 import { remainingBudget, withinBudget } from '../lib/a2aBudget.js';
+import { reserveA2aCall } from '../lib/a2aReserve.js';
+import { assertSafeUrl, safeFetch } from '../lib/ssrf.js';
 import { delegateOnChain, signDelegation } from '../chain/client.js';
 import type { Address } from 'viem';
 
@@ -70,22 +72,20 @@ export async function a2aRoutes(app: FastifyInstance) {
     if (!call || call.callerAgentId !== req.agent!.id) return reply.code(404).send({ error: 'Call not found' });
     if (call.status !== 'quoted') return reply.code(409).send({ error: `Call is ${call.status}` });
 
-    // Re-check the budget now, in case other calls were paid since the quote.
     const ev = await evaluate(call.agreementId, call.callerAgentId, call.calleeAgentId);
     if ('error' in ev) return reply.code(400).send({ error: ev.error });
-    const others = await db
-      .select()
-      .from(schema.a2aCalls)
-      .where(and(eq(schema.a2aCalls.agreementId, call.agreementId), inArray(schema.a2aCalls.status, ['paid', 'done'])));
-    const spent = others.reduce((s, c) => s + BigInt(c.priceTinybar), 0n);
-    if (!withinBudget({ jobPrice: ev.jobPrice, alreadySpent: spent, price: BigInt(call.priceTinybar), maxPercent: env.A2A_MAX_PERCENT })) {
-      await db.update(schema.a2aCalls).set({ status: 'blocked', blockedReason: 'Budget exceeded at call time' }).where(eq(schema.a2aCalls.id, call.id));
-      return reply.code(403).send({ error: 'Budget exceeded' });
-    }
     if (!ev.callee.endpointUrl) return reply.code(400).send({ error: 'Callee agent has no endpoint URL' });
+    if (!ev.agreement.escrowAddress) return reply.code(400).send({ error: 'Agreement has no escrow' });
+    // Refuse an unsafe callee URL before any money moves.
+    try { await assertSafeUrl(ev.callee.endpointUrl); } catch (e) {
+      return reply.code(400).send({ error: `Callee endpoint refused: ${(e as Error).message}` });
+    }
+
+    // Budget re-check plus quoted -> paid in one transaction under a per-agreement advisory lock.
+    const reserved = await reserveA2aCall(call.id, req.agent!.id, env.A2A_MAX_PERCENT);
+    if (!reserved.ok) return reply.code(reserved.code).send({ error: reserved.error });
 
     // Pay the callee out of the job's escrow (JobEscrow.delegate), authorised by a verifier-signed message.
-    if (!ev.agreement.escrowAddress) return reply.code(400).send({ error: 'Agreement has no escrow' });
     let payTx: string;
     try {
       const amount = BigInt(call.priceTinybar);
@@ -97,21 +97,23 @@ export async function a2aRoutes(app: FastifyInstance) {
       await db.update(schema.a2aCalls).set({ status: 'failed', blockedReason: `Payment failed: ${(e as Error).message}` }).where(eq(schema.a2aCalls.id, call.id));
       return reply.code(502).send({ error: `Payment failed: ${(e as Error).message}` });
     }
-    await db.update(schema.a2aCalls).set({ status: 'paid' }).where(eq(schema.a2aCalls.id, call.id));
-    await db.insert(schema.payments).values({ agreementId: call.agreementId, kind: 'a2a', amountTinybar: call.priceTinybar, txHash: payTx, status: 'confirmed' });
+    // The Delegated indexer may have recorded this tx already; the unique index on a2a payments makes this idempotent.
+    await db.insert(schema.payments).values({ agreementId: call.agreementId, kind: 'a2a', amountTinybar: call.priceTinybar, txHash: payTx, status: 'confirmed' }).onConflictDoNothing();
 
     try {
-      const res = await fetch(`${ev.callee.endpointUrl.replace(/\/$/, '')}/a2a`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agreementId: call.agreementId, callId: call.id, input: body.input }),
-        signal: AbortSignal.timeout(90_000),
-      });
-      const text = await res.text();
-      if (!res.ok) throw new Error(`callee responded ${res.status}: ${text.slice(0, 200)}`);
+      const res = await safeFetch(
+        `${ev.callee.endpointUrl.replace(/\/$/, '')}/a2a`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(env.AGENT_CALLBACK_SECRET ? { 'x-backend-key': env.AGENT_CALLBACK_SECRET } : {}) },
+          body: JSON.stringify({ agreementId: call.agreementId, callId: call.id, input: body.input }),
+        },
+        { timeoutMs: 90_000, maxBytes: 1_000_000 },
+      );
+      if (!res.ok) throw new Error(`callee responded ${res.status}: ${res.text.slice(0, 200)}`);
       await db.update(schema.a2aCalls).set({ status: 'done' }).where(eq(schema.a2aCalls.id, call.id));
-      let output: unknown = text;
-      try { output = JSON.parse(text); } catch { /* keep text */ }
+      let output: unknown = res.text;
+      try { output = JSON.parse(res.text); } catch { /* keep text */ }
       return { status: 'done', output };
     } catch (e) {
       await db.update(schema.a2aCalls).set({ status: 'failed', blockedReason: (e as Error).message }).where(eq(schema.a2aCalls.id, call.id));

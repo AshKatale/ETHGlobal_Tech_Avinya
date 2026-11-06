@@ -25,6 +25,11 @@ const schema = z.object({
 
   GITHUB_TOKEN: z.string().optional(),
 
+  // Allow lister-supplied agent endpoints on loopback/private hosts (demo agents on localhost). Off by default.
+  ALLOW_LOCAL_AGENTS: z.string().default('false'),
+  // Shared secret sent to agents as x-backend-key on /quote, /tasks and /a2a (see docs/contracts/agent-protocol.md).
+  AGENT_CALLBACK_SECRET: z.string().optional(),
+
   BENCHMARK_PASS_SCORE: z.coerce.number().default(80),
   BENCHMARK_CUSTOM_WEIGHT: z.coerce.number().min(0).max(1).default(0.4),
   A2A_MAX_PERCENT: z.coerce.number().min(0).max(100).default(30),

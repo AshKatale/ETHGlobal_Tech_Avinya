@@ -7,6 +7,7 @@ import {
   ChainError, createEscrowOnChain, readEscrowState, refundOnChain, releaseOnChain, signVerdict, submitOnChain,
 } from './client.js';
 import { EscrowState } from './abi.js';
+import { latestSubmission } from '../lib/submissions.js';
 
 const DEFAULT_DEADLINE_SECS = 7 * 24 * 3600;
 
@@ -36,7 +37,7 @@ export async function ensureEscrow(agreementId: string): Promise<string> {
 /** Make sure the escrow is in the Submitted state on-chain (records the deliverable hash). Idempotent. */
 export async function ensureSubmittedOnChain(agreementId: string): Promise<void> {
   const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, agreementId)).limit(1);
-  const [submission] = await db.select().from(schema.submissions).where(eq(schema.submissions.agreementId, agreementId)).limit(1);
+  const submission = await latestSubmission(agreementId);
   if (!agreement?.escrowAddress) throw new ChainError('Agreement has no escrow');
   if (!submission) throw new ChainError('No submission');
   const escrow = agreement.escrowAddress as Address;

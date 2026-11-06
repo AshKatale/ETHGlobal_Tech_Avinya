@@ -8,6 +8,13 @@
       "when": 1793978827543,
       "tag": "0000_talented_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793979994281,
+      "tag": "0001_empty_patriot",
+      "breakpoints": true
     }
   ]
 }

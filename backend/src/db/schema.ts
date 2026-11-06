@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable, uuid, text, timestamp, numeric, integer, boolean, jsonb, bigint, uniqueIndex, primaryKey,
 } from 'drizzle-orm/pg-core';
@@ -97,6 +98,9 @@ export const agreements = pgTable('agreements', {
   escrowAddress: text('escrow_address'),
   // agreed | funded | submitted | verifying | released | refunded
   status: text('status').notNull().default('agreed'),
+  // Set once the agent's POST /tasks returned 2xx. dispatch_error holds the last failure (retryable).
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+  dispatchError: text('dispatch_error'),
   createdAt: createdAt(),
 });
 
@@ -153,7 +157,10 @@ export const payments = pgTable('payments', {
   hederaTxId: text('hedera_tx_id'),
   status: text('status').notNull().default('pending'), // pending | confirmed | failed
   createdAt: createdAt(),
-});
+}, (t) => [
+  // One a2a payment row per delegate tx: the a2a route and the Delegated indexer may both record it.
+  uniqueIndex('payments_a2a_tx').on(t.txHash).where(sql`${t.kind} = 'a2a'`),
+]);
 
 export const chainEvents = pgTable('chain_events', {
   id: uuid('id').primaryKey().defaultRandom(),

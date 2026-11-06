@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent, requireUser, sha256 } from '../lib/auth.js';
@@ -8,6 +8,8 @@ import { ensureSubmittedOnChain, settle } from '../chain/ops.js';
 import { fetchRepo } from '../lib/github.js';
 import { verify } from '../lib/analyzer.js';
 import { uploadJson } from '../lib/zerog.js';
+import { latestSubmission } from '../lib/submissions.js';
+import { dispatchAgreement } from '../lib/agentClient.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -20,7 +22,7 @@ export async function runVerification(agreementId: string) {
 
   try {
     const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, agreement.requestId)).limit(1);
-    const [submission] = await db.select().from(schema.submissions).where(eq(schema.submissions.agreementId, agreementId)).limit(1);
+    const submission = await latestSubmission(agreementId);
     if (!submission) throw new Error('No submission found');
     // Record the deliverable hash on-chain first; release/refund need the escrow in the Submitted state.
     await ensureSubmittedOnChain(agreementId);
@@ -64,21 +66,32 @@ export async function jobRoutes(app: FastifyInstance) {
     const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
     if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
     if (agreement.agentId !== req.agent!.id) return reply.code(403).send({ error: 'Not your agreement' });
-    if (!canTransition(agreement.status as AgreementStatus, 'submitted')) {
+    // Only a funded agreement accepts work. Resubmitting while submitted or verifying is refused.
+    if (agreement.status !== 'funded') {
       return reply.code(409).send({ error: `Cannot submit while status is ${agreement.status} (escrow must be funded)` });
     }
     if (body.kind === 'repo') {
       try { new URL(body.content); } catch { return reply.code(400).send({ error: 'content must be a repo URL when kind=repo' }); }
     }
 
-    await db.insert(schema.submissions).values({
-      agreementId: id,
-      content: body.content,
-      kind: body.kind,
-      deliverableHash: sha256(body.content),
+    // Claim the funded -> submitted transition atomically so two simultaneous submits cannot both win.
+    const claimed = await db.transaction(async (tx) => {
+      const moved = await tx
+        .update(schema.agreements)
+        .set({ status: 'submitted' })
+        .where(and(eq(schema.agreements.id, id), eq(schema.agreements.status, 'funded')))
+        .returning({ id: schema.agreements.id });
+      if (moved.length === 0) return false;
+      await tx.insert(schema.submissions).values({
+        agreementId: id,
+        content: body.content,
+        kind: body.kind,
+        deliverableHash: sha256(body.content),
+      });
+      return true;
     });
-    await db.update(schema.agreements).set({ status: 'submitted' }).where(eq(schema.agreements.id, id));
-    // Phase 3: also call JobEscrow.submit(deliverableHash) through the relayer.
+    if (!claimed) return reply.code(409).send({ error: 'Cannot submit: agreement is no longer funded' });
+    // Verification records the deliverable hash on-chain (ensureSubmittedOnChain) and then settles.
     void runVerification(id);
     return reply.code(202).send({ status: 'submitted', verification: 'started' });
   });
@@ -114,10 +127,34 @@ export async function jobRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
     if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
+    // Only the client or the owner of the agreement's agent may trigger settlement.
+    let allowed = agreement.clientUserId === req.user!.id;
+    if (!allowed) {
+      const [agent] = await db.select({ ownerUserId: schema.agents.ownerUserId }).from(schema.agents).where(eq(schema.agents.id, agreement.agentId)).limit(1);
+      allowed = agent?.ownerUserId === req.user!.id;
+    }
+    if (!allowed) return reply.code(403).send({ error: 'Only the client or the agent owner can settle this agreement' });
     try {
       return await settle(id);
     } catch (e) {
       return reply.code(502).send({ error: `Chain error: ${(e as Error).message}` });
     }
+  });
+
+  // Retry the POST /tasks callback to the agent (after a stored dispatch_error). Client or the agent's owner.
+  app.post('/agreements/:id/dispatch', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
+    let allowed = agreement.clientUserId === req.user!.id;
+    if (!allowed) {
+      const [agent] = await db.select({ ownerUserId: schema.agents.ownerUserId }).from(schema.agents).where(eq(schema.agents.id, agreement.agentId)).limit(1);
+      allowed = agent?.ownerUserId === req.user!.id;
+    }
+    if (!allowed) return reply.code(403).send({ error: 'Not your agreement' });
+    if (agreement.status !== 'funded') return reply.code(409).send({ error: `Status is ${agreement.status}; only a funded agreement is dispatched` });
+    if (agreement.dispatchedAt) return reply.code(409).send({ error: 'Already dispatched' });
+    void dispatchAgreement(id);
+    return reply.code(202).send({ status: 'dispatching' });
   });
 }

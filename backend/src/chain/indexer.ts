@@ -5,6 +5,7 @@ import { decodeEventLog, type Hex } from 'viem';
 import { db, schema } from '../db/index.js';
 import { env } from '../env.js';
 import { escrowAbi } from './abi.js';
+import { dispatchAgreement } from '../lib/agentClient.js';
 
 type MirrorLog = {
   address: string; data: string; topics: string[]; timestamp: string; transaction_hash: string; index: number;
@@ -24,11 +25,36 @@ async function fetchLogs(address: string, afterTs: string): Promise<MirrorLog[]>
   return out;
 }
 
+/**
+ * Delegated(agreementId, subAgent, amount): make sure the a2a payment exists exactly once.
+ * The /a2a/call route records the same tx hash; a unique index on a2a payments makes both writers idempotent.
+ * If the route marked the call failed after the chain tx actually landed, the event heals the call to paid.
+ */
+export async function applyDelegated(agreement: typeof schema.agreements.$inferSelect, subAgent: string, amount: string, txHash: string) {
+  await db.insert(schema.payments)
+    .values({ agreementId: agreement.id, kind: 'a2a', amountTinybar: amount, txHash, status: 'confirmed' })
+    .onConflictDoNothing();
+  const calls = await db.select().from(schema.a2aCalls).where(eq(schema.a2aCalls.agreementId, agreement.id));
+  const callees = await db.select({ id: schema.agents.id, payout: schema.agents.payoutAddress }).from(schema.agents);
+  const payoutOf = new Map(callees.map((c) => [c.id, c.payout.toLowerCase()]));
+  const healable = calls.find((c) =>
+    c.status === 'failed' && (c.blockedReason ?? '').startsWith('Payment failed') &&
+    c.priceTinybar === amount && payoutOf.get(c.calleeAgentId) === subAgent.toLowerCase());
+  if (healable) {
+    await db.update(schema.a2aCalls).set({ status: 'paid', blockedReason: null }).where(eq(schema.a2aCalls.id, healable.id));
+  }
+}
+
 async function applyEvent(agreement: typeof schema.agreements.$inferSelect, eventName: string, args: Record<string, unknown>, txHash: string) {
   switch (eventName) {
     case 'Funded':
       await db.update(schema.agreements).set({ status: 'funded' }).where(and(eq(schema.agreements.id, agreement.id), eq(schema.agreements.status, 'agreed')));
       await db.insert(schema.payments).values({ agreementId: agreement.id, kind: 'fund', amountTinybar: String(args.amount), txHash, status: 'confirmed' });
+      // Tell the agent to start. Background, never blocks or breaks the indexer; failures are stored and retryable.
+      void dispatchAgreement(agreement.id).catch((e) => console.error(`[dispatch] ${agreement.id}: ${(e as Error).message}`));
+      break;
+    case 'Delegated':
+      await applyDelegated(agreement, String(args.subAgent), String(args.amount), txHash);
       break;
     case 'Released':
     case 'Refunded': {
@@ -49,7 +75,7 @@ async function applyEvent(agreement: typeof schema.agreements.$inferSelect, even
       break;
     }
     default:
-      break; // Submitted and Delegated are recorded in chain_events; their DB rows are written when the backend sends them.
+      break; // Submitted is recorded in chain_events; its DB row is written when the backend sends it.
   }
 }
 
@@ -94,6 +120,10 @@ export async function indexOnce() {
     for (const agreement of active) {
       if (!agreement.escrowAddress) continue;
       try { await indexEscrow(agreement); } catch (e) { console.error(`[indexer] ${agreement.escrowAddress}: ${(e as Error).message}`); }
+      // Funded but never dispatched (e.g. the backend restarted mid-dispatch). Stored failures are retried manually.
+      if (agreement.status === 'funded' && !agreement.dispatchedAt && !agreement.dispatchError) {
+        void dispatchAgreement(agreement.id).catch(() => {});
+      }
     }
   } finally {
     running = false;
