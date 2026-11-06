@@ -3,7 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent, requireUser } from '../lib/auth.js';
-import { assertTransition } from '../lib/stateMachine.js';
+import { ensureEscrow } from '../chain/ops.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 const idParam = z.object({ id: z.string().uuid() });
@@ -110,8 +110,14 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         .returning();
       return a;
     });
-    // Phase 3: create the JobEscrow here and store escrow_address.
-    return reply.code(201).send(agreement);
+    // Create the per-agreement JobEscrow on Hedera. If the chain is unavailable the agreement still exists;
+    // the client can retry with POST /agreements/:id/escrow.
+    try {
+      const escrowAddress = await ensureEscrow(agreement.id);
+      return reply.code(201).send({ ...agreement, escrowAddress });
+    } catch (e) {
+      return reply.code(201).send({ ...agreement, escrowError: (e as Error).message });
+    }
   });
 
   // ---------- agreements ----------
@@ -140,16 +146,16 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     return mine;
   });
 
-  // DEV ONLY: stands in for the on-chain Funded event until the indexer exists (step 3.9). Remove then.
-  if (process.env.NODE_ENV !== 'production') {
-    app.post('/dev/agreements/:id/mark-funded', async (req, reply) => {
-      const { id } = idParam.parse(req.params);
-      const [a] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
-      if (!a) return reply.code(404).send({ error: 'Agreement not found' });
-      assertTransition(a.status as never, 'funded');
-      await db.update(schema.agreements).set({ status: 'funded' }).where(eq(schema.agreements.id, id));
-      await db.insert(schema.payments).values({ agreementId: id, kind: 'fund', amountTinybar: a.priceTinybar, status: 'confirmed' });
-      return { ok: true, status: 'funded' };
-    });
-  }
+  // Retry escrow creation if the chain was unavailable at accept time.
+  app.post('/agreements/:id/escrow', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [a] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!a) return reply.code(404).send({ error: 'Agreement not found' });
+    if (a.clientUserId !== req.user!.id) return reply.code(403).send({ error: 'Not your agreement' });
+    try {
+      return { escrowAddress: await ensureEscrow(id) };
+    } catch (e) {
+      return reply.code(502).send({ error: `Chain error: ${(e as Error).message}` });
+    }
+  });
 }
