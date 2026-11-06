@@ -5,6 +5,8 @@ import { db, schema } from '../db/index.js';
 import { requireAgent } from '../lib/auth.js';
 import { env } from '../env.js';
 import { remainingBudget, withinBudget } from '../lib/a2aBudget.js';
+import { delegateOnChain, signDelegation } from '../chain/client.js';
+import type { Address } from 'viem';
 
 const MAX_DEPTH = 2;
 
@@ -61,7 +63,7 @@ export async function a2aRoutes(app: FastifyInstance) {
     return { allowed: true, callId: call.id, priceTinybar: ev.price.toString(), remainingBudgetTinybar: remaining.toString() };
   });
 
-  // Pay and call. Rail 1 (JobEscrow.delegate) is wired in Phase 3 step 3.8; until then payment is recorded as a dev stub.
+  // Pay (JobEscrow.delegate) and call the callee.
   app.post('/a2a/call', { preHandler: requireAgent }, async (req, reply) => {
     const body = z.object({ callId: z.string().uuid(), input: z.unknown() }).parse(req.body);
     const [call] = await db.select().from(schema.a2aCalls).where(eq(schema.a2aCalls.id, body.callId)).limit(1);
@@ -82,9 +84,21 @@ export async function a2aRoutes(app: FastifyInstance) {
     }
     if (!ev.callee.endpointUrl) return reply.code(400).send({ error: 'Callee agent has no endpoint URL' });
 
-    // TODO(Phase 3, step 3.8): JobEscrow.delegate(...) here; mark paid only after the indexer sees Delegated.
+    // Pay the callee out of the job's escrow (JobEscrow.delegate), authorised by a verifier-signed message.
+    if (!ev.agreement.escrowAddress) return reply.code(400).send({ error: 'Agreement has no escrow' });
+    let payTx: string;
+    try {
+      const amount = BigInt(call.priceTinybar);
+      const escrow = ev.agreement.escrowAddress as Address;
+      const subAgent = ev.callee.payoutAddress as Address;
+      const { sig, nonce } = await signDelegation(escrow, call.agreementId, subAgent, amount);
+      payTx = (await delegateOnChain(escrow, subAgent, amount, nonce, sig)).hash;
+    } catch (e) {
+      await db.update(schema.a2aCalls).set({ status: 'failed', blockedReason: `Payment failed: ${(e as Error).message}` }).where(eq(schema.a2aCalls.id, call.id));
+      return reply.code(502).send({ error: `Payment failed: ${(e as Error).message}` });
+    }
     await db.update(schema.a2aCalls).set({ status: 'paid' }).where(eq(schema.a2aCalls.id, call.id));
-    await db.insert(schema.payments).values({ agreementId: call.agreementId, kind: 'a2a', amountTinybar: call.priceTinybar, status: 'pending' });
+    await db.insert(schema.payments).values({ agreementId: call.agreementId, kind: 'a2a', amountTinybar: call.priceTinybar, txHash: payTx, status: 'confirmed' });
 
     try {
       const res = await fetch(`${ev.callee.endpointUrl.replace(/\/$/, '')}/a2a`, {
