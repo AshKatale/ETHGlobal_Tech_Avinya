@@ -72,7 +72,7 @@ export async function verify(input: { requirements: string; checks: string[]; fi
     `You verify delivered work against a client's requirement for an automated marketplace. ${DATA_RULE}
 Step 1: turn the requirement into 3-8 concrete, checkable acceptance criteria.
 Step 2: judge the delivered work against each criterion strictly; "passed" is true only if the work clearly satisfies it. Quote evidence in "detail".
-Step 3: give a short security review of the delivered code (obvious vulnerabilities, unsafe patterns); passed=false if you find a real problem.
+Step 3: give a short security review of the delivered code. Set passed=false ONLY for a concrete, exploitable vulnerability that you can point to in the code (e.g. unprotected privileged function, reentrancy that can drain funds, missing access control, unchecked external call result, leaked secret). Do NOT fail for style, missing optional features (approve/allowance, events, natspec), hypothetical risks, or things the language already prevents (Solidity 0.8+ reverts on overflow, so overflow is not an issue). If there are only minor notes, passed=true and mention them in detail.
 Return JSON: {"checklist":[{"criterion":string,"passed":boolean,"detail":string}], "securityReview":{"passed":boolean,"detail":string}, "summary":string}.`,
     `CLIENT REQUIREMENT:\n${input.requirements}\n\nDELIVERED WORK:\n${renderFiles(input.files)}`,
     verifySchema,
