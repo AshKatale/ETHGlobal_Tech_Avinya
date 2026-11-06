@@ -11,6 +11,7 @@ import { jobRoutes } from './routes/jobs.js';
 import { a2aRoutes } from './routes/a2a.js';
 import { githubRoutes } from './routes/github.js';
 import { agentApiRoutes } from './routes/agentApi.js';
+import { meRoutes } from './routes/me.js';
 import { startIndexer } from './chain/indexer.js';
 import { startGateway } from './x402/gateway.js';
 
@@ -47,6 +48,7 @@ export async function buildServer() {
   await app.register(a2aRoutes);
   await app.register(githubRoutes);
   await app.register(agentApiRoutes);
+  await app.register(meRoutes);
   return app;
 }
 
