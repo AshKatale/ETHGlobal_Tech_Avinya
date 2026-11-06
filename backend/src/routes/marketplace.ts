@@ -7,6 +7,9 @@ import { ensureTask, fundUrl, loadDesignInputs, payoutUrl } from '../chain/ops.j
 import { requestDesign } from '../designer/client.js';
 import { dispatchTask, requestQuotes } from '../agents/dispatch.js';
 import { summarizeAgents } from '../lib/agentSummary.js';
+import { readDesignProof } from '../chain/client.js';
+import { compareTerms, sameHash } from '../lib/designProof.js';
+import type { Address } from 'viem';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 const idParam = z.object({ id: z.string().uuid() });
@@ -180,6 +183,64 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       terms: specRow ? { spec: specRow.spec, specHash: specRow.specHash, source: specRow.source } : null,
       subLegs: subLegs.map((l) => ({ ...l, payUrl: payoutUrl(id, l.legId) })),
     };
+  });
+
+  // How the contract was designed (inputs, analysis, trust, terms) and proof that the deployed contract holds those terms,
+  // for the root contract and for every sub-agent leg. Read-only. The on-chain read is cached briefly: it is several RPC calls.
+  const designCache = new Map<string, { at: number; value: unknown }>();
+  app.get('/agreements/:id/design', async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const hit = designCache.get(id);
+    if (hit && Date.now() - hit.at < 20_000) return hit.value;
+
+    const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
+    const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, agreement.requestId)).limit(1);
+    const [agent] = await db.select().from(schema.agents).where(eq(schema.agents.id, agreement.agentId)).limit(1);
+    const specs = await db.select().from(schema.contractSpecs).where(eq(schema.contractSpecs.agreementId, id));
+    const root = specs.find((x) => x.kind === 'root');
+    const subLegs = await db.select().from(schema.subLegs).where(eq(schema.subLegs.agreementId, id));
+    const callees = subLegs.length ? await db.select().from(schema.agents).where(inArray(schema.agents.id, subLegs.map((l) => l.calleeAgentId))) : [];
+
+    // Ask the contract itself. If the relay is down, say so: never show a tick we did not check.
+    let chain: Awaited<ReturnType<typeof readDesignProof>> | null = null;
+    let chainError: string | null = null;
+    if (agreement.escrowAddress) {
+      try { chain = await readDesignProof(agreement.escrowAddress as Address, subLegs.length); }
+      catch (e) { chainError = (e as Error).message; }
+    }
+
+    const rootSpec = root?.spec as { priceTinybar: string; deadlineHours: number; maxSubBps: number; maxSubLegs: number; payoutGraceSecs: number } | undefined;
+    const value = {
+      agreementId: id,
+      inputs: {
+        title: request.title,
+        requirements: request.requirements,
+        agent: { id: agent.id, name: agent.name, description: agent.description, capabilities: agent.capabilities, priceTinybar: String(agent.priceTinybar) },
+      },
+      root: root ? { spec: root.spec, specHash: root.specHash, source: root.source, deployTx: root.deployTx } : null,
+      contract: agreement.escrowAddress ?? null,
+      proof: !agreement.escrowAddress ? { state: 'not_deployed' as const }
+        : !chain ? { state: 'unavailable' as const, error: chainError }
+        : !rootSpec ? { state: 'no_design' as const }
+        : { state: 'checked' as const, rows: compareTerms(rootSpec, { price: chain.price, deadlineUnix: chain.deadlineUnix, maxSubBps: chain.maxSubBps, maxSubLegs: chain.maxSubLegs, payoutGrace: chain.payoutGrace }, new Date(agreement.createdAt).getTime()) },
+      subs: subLegs.map((l) => {
+        const row = specs.find((x) => x.kind === 'sub' && sameHash(x.specHash, l.termsHash));
+        const callee = callees.find((c) => c.id === l.calleeAgentId);
+        const onchain = chain?.legs.find((c) => c.legId === l.legId);
+        const designed = row && (row.spec as { kind?: string }).kind !== 'sub-default';
+        return {
+          legId: l.legId, status: l.status, priceTinybar: String(l.priceTinybar), termsHash: l.termsHash, addLegTx: l.addLegTx,
+          callee: callee ? { id: callee.id, name: callee.name, capabilities: callee.capabilities } : null,
+          // 'default' = the designer was unavailable when the leg was added, so the leg carries a plain default instead of designed terms.
+          design: designed ? { spec: row.spec, source: row.source, specHash: row.specHash } : { spec: null, source: row?.source ?? 'default', specHash: l.termsHash },
+          proof: onchain ? { state: 'checked' as const, onchainHash: onchain.termsHash, match: sameHash(onchain.termsHash, l.termsHash), onchainPrice: String(onchain.price), priceMatch: String(onchain.price) === String(l.priceTinybar) }
+            : { state: chain ? ('missing' as const) : ('unavailable' as const) },
+        };
+      }),
+    };
+    if (chain || !agreement.escrowAddress) designCache.set(id, { at: Date.now(), value });
+    return value;
   });
 
   // How the client funds the task: over x402 (agents, key-based clients) or by calling fund() from a wallet.
