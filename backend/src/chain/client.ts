@@ -41,7 +41,7 @@ function factoryAddress(): Address {
 // Gas limits (Hedera needs them explicit; estimates through the relay can be unreliable).
 // Paying an address that does not exist on Hedera yet auto-creates it, which costs ~600k gas on top of the call.
 // So the payout calls get a generous limit; unused gas is not charged.
-const GAS = { createEscrow: 2_500_000n, submit: 250_000n, release: 1_200_000n, refund: 1_200_000n, delegate: 1_200_000n } as const;
+const GAS = { createEscrow: 2_500_000n, submit: 250_000n, release: 1_200_000n, refund: 1_200_000n, delegate: 1_200_000n, refundTimeout: 1_200_000n } as const;
 
 // One relayer wallet means one nonce stream: send transactions strictly one at a time.
 let queue: Promise<unknown> = Promise.resolve();
@@ -88,6 +88,30 @@ export async function createEscrowOnChain(a: {
 export async function readEscrowState(escrow: Address): Promise<number> {
   return Number(await publicClient.readContract({ address: escrow, abi: escrowAbi, functionName: 'state' }));
 }
+
+/**
+ * V2 escrows expose submittedAt() and reviewWindow(); V1 escrows do not (the call reverts or returns no data).
+ * Returns null for a V1 escrow. Other failures (network) throw. nowSec is the latest block timestamp.
+ */
+export async function readRefundTimeoutInfo(escrow: Address): Promise<{ state: number; submittedAt: bigint; reviewWindow: bigint; nowSec: bigint } | null> {
+  const state = await readEscrowState(escrow);
+  let reviewWindow: bigint;
+  let submittedAt: bigint;
+  try {
+    reviewWindow = await publicClient.readContract({ address: escrow, abi: escrowAbi, functionName: 'reviewWindow' });
+    submittedAt = await publicClient.readContract({ address: escrow, abi: escrowAbi, functionName: 'submittedAt' });
+  } catch (e) {
+    const name = (e as { name?: string }).name ?? '';
+    const cause = (e as { cause?: { name?: string } }).cause?.name ?? '';
+    if (/ZeroData|Reverted/.test(`${name} ${cause}`)) return null;
+    throw new ChainError(`Could not read the escrow review window: ${(e as Error).message.split('\n')[0]}`);
+  }
+  const block = await publicClient.getBlock();
+  return { state, submittedAt, reviewWindow, nowSec: block.timestamp };
+}
+
+export const refundIfNoVerdictOnChain = (escrow: Address) =>
+  send({ address: escrow, abi: escrowAbi, functionName: 'refundIfNoVerdict', args: [], gas: GAS.refundTimeout });
 
 export const submitOnChain = (escrow: Address, deliverableHash: Hex) =>
   send({ address: escrow, abi: escrowAbi, functionName: 'submit', args: [deliverableHash], gas: GAS.submit });

@@ -7,6 +7,7 @@ const chain = vi.hoisted(() => ({
   sent: [] as string[],
   state: 2,
   delay: 0,
+  refundInfo: null as null | { state: number; submittedAt: bigint; reviewWindow: bigint; nowSec: bigint },
   createEscrowOnChain: vi.fn(),
 }));
 
@@ -19,6 +20,8 @@ vi.mock('./chain/client.js', async () => {
       return { escrow: `0x${'ab'.repeat(20)}`, txHash: '0xcreate' };
     },
     readEscrowState: async () => chain.state,
+    readRefundTimeoutInfo: async () => chain.refundInfo,
+    refundIfNoVerdictOnChain: async () => { chain.sent.push('refund-timeout'); await new Promise((r) => setTimeout(r, chain.delay)); return { hash: `0x${'a1'.repeat(32)}`, receipt: {} }; },
     signVerdict: async () => ({ sig: `0x${'11'.repeat(65)}`, nonce: BigInt(Date.now()) }),
     releaseOnChain: async () => { chain.sent.push('release'); await new Promise((r) => setTimeout(r, chain.delay)); return { hash: `0x${'cd'.repeat(32)}`, receipt: {} }; },
     refundOnChain: async () => { chain.sent.push('refund'); await new Promise((r) => setTimeout(r, chain.delay)); return { hash: `0x${'ef'.repeat(32)}`, receipt: {} }; },
@@ -31,7 +34,7 @@ import { buildServer } from './server.js';
 
 const fx = new Fixtures();
 afterAll(async () => { if (HAS_DB) await fx.cleanup(); await pool.end(); });
-beforeEach(() => { chain.sent.length = 0; chain.state = 2; chain.delay = 0; });
+beforeEach(() => { chain.sent.length = 0; chain.state = 2; chain.delay = 0; chain.refundInfo = null; });
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 
@@ -170,7 +173,7 @@ describe.skipIf(!HAS_DB)('S-06 single-flight settle', () => {
     const agreement = await fx.agreement(client.id, ag.id, { status: 'verifying' });
     await db.update(schema.agreements).set({ escrowAddress: `0x${'cd'.repeat(20)}` }).where(eq(schema.agreements.id, agreement.id));
     await db.insert(schema.verdicts).values({ agreementId: agreement.id, result: 'PASS' });
-    chain.delay = 600; // keep the first settle in flight while the others arrive
+    chain.delay = 3000; // keep the first settle in flight while the others arrive
 
     const go = () => app.inject({ method: 'POST', url: `/agreements/${agreement.id}/settle`, headers: auth(client.token) });
     const res = await Promise.all(Array.from({ length: 8 }, go));
@@ -281,6 +284,42 @@ describe.skipIf(!HAS_DB)('UI field additions', () => {
     const mine = (await app.inject({ method: 'GET', url: '/requests?mine=true', headers: auth(u.token) })).json() as { clientUserId: string }[];
     expect(mine.length).toBeGreaterThan(0);
     expect(mine.every((x) => x.clientUserId === u.id)).toBe(true);
+    await app.close();
+  });
+});
+
+describe.skipIf(!HAS_DB)('refund-timeout route (stubbed chain; NOT tested against a real V2 escrow)', () => {
+  it('auth, V1 501, too early 409 with remaining seconds, wrong state 409, eligible sends exactly one tx', async () => {
+    const app = await buildServer();
+    const client = await fx.user();
+    const owner = await fx.user();
+    const stranger = await fx.user();
+    const ag = await fx.agent(owner.id);
+    const agreement = await fx.agreement(client.id, ag.id, { status: 'submitted' });
+    await db.update(schema.agreements).set({ escrowAddress: `0x${'ee'.repeat(20)}` }).where(eq(schema.agreements.id, agreement.id));
+    const go = (token?: string) => app.inject({ method: 'POST', url: `/agreements/${agreement.id}/refund-timeout`, headers: token ? auth(token) : {} });
+    const now = BigInt(Math.floor(Date.now() / 1000));
+
+    expect((await go()).statusCode).toBe(401);
+    expect((await go(stranger.token)).statusCode).toBe(403);
+
+    chain.refundInfo = null; // V1 escrow
+    expect((await go(client.token)).statusCode).toBe(501);
+
+    chain.refundInfo = { state: 2, submittedAt: now - 100n, reviewWindow: 3600n, nowSec: now };
+    const early = await go(client.token);
+    expect(early.statusCode).toBe(409);
+    expect(early.json().remainingSeconds).toBe(3501);
+
+    chain.refundInfo = { state: 1, submittedAt: 0n, reviewWindow: 3600n, nowSec: now };
+    expect((await go(owner.token)).statusCode).toBe(409);
+    expect(chain.sent).toHaveLength(0);
+
+    chain.refundInfo = { state: 2, submittedAt: now - 7200n, reviewWindow: 3600n, nowSec: now };
+    chain.delay = 5000; // DB round trips to Neon are slow; keep the first call in flight until the others have arrived
+    const res = await Promise.all([go(client.token), go(owner.token), go(client.token)]);
+    expect(chain.sent.filter((x) => x === 'refund-timeout')).toHaveLength(1);
+    expect(res.filter((r) => r.json().txHash)).toHaveLength(1);
     await app.close();
   });
 });

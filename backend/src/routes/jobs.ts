@@ -5,7 +5,7 @@ import { db, schema } from '../db/index.js';
 import { optionalAuth, requireAgent, requireUser, sha256 } from '../lib/auth.js';
 import { canViewPrivate, publicVerdict, publicVerification } from '../lib/access.js';
 import { canTransition, type AgreementStatus } from '../lib/stateMachine.js';
-import { ensureSubmittedOnChain, settle } from '../chain/ops.js';
+import { ensureSubmittedOnChain, refundTimeout, settle } from '../chain/ops.js';
 import { fetchRepo } from '../lib/github.js';
 import { verify } from '../lib/analyzer.js';
 import { uploadJson } from '../lib/zerog.js';
@@ -168,6 +168,32 @@ export async function jobRoutes(app: FastifyInstance) {
     if (!allowed) return reply.code(403).send({ error: 'Only the client or the agent owner can settle this agreement' });
     try {
       return await settle(id);
+    } catch (e) {
+      return reply.code(502).send({ error: `Chain error: ${(e as Error).message}` });
+    }
+  });
+
+  // V2 escrows only: refund the client when no verdict arrived within the review window (refundIfNoVerdict).
+  app.post('/agreements/:id/refund-timeout', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
+    let allowed = agreement.clientUserId === req.user!.id;
+    if (!allowed) {
+      const [agent] = await db.select({ ownerUserId: schema.agents.ownerUserId }).from(schema.agents).where(eq(schema.agents.id, agreement.agentId)).limit(1);
+      allowed = agent?.ownerUserId === req.user!.id;
+    }
+    if (!allowed) return reply.code(403).send({ error: 'Only the client or the agent owner can use this' });
+    if (!agreement.escrowAddress) return reply.code(409).send({ error: 'Agreement has no escrow' });
+    try {
+      const r = await refundTimeout(id);
+      switch (r.kind) {
+        case 'sent': return { txHash: r.txHash, result: 'refund_timeout' };
+        case 'v1': return reply.code(501).send({ error: 'This escrow is a V1 contract: it has no review timeout (refundIfNoVerdict exists only on V2 escrows)' });
+        case 'too_early': return reply.code(409).send({ error: 'Review window has not passed yet', remainingSeconds: r.remainingSeconds });
+        case 'wrong_state': return reply.code(409).send({ error: `Escrow is in state ${r.state}; the timeout refund needs Submitted` });
+        case 'in_progress': return { already: true, inProgress: true };
+      }
     } catch (e) {
       return reply.code(502).send({ error: `Chain error: ${(e as Error).message}` });
     }

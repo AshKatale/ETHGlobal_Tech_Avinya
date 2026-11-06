@@ -4,10 +4,11 @@ import { eq } from 'drizzle-orm';
 import type { Address, Hex } from 'viem';
 import { db, schema } from '../db/index.js';
 import {
-  ChainError, createEscrowOnChain, readEscrowState, refundOnChain, releaseOnChain, signVerdict, submitOnChain,
+  ChainError, createEscrowOnChain, readEscrowState, readRefundTimeoutInfo, refundIfNoVerdictOnChain, refundOnChain, releaseOnChain, signVerdict, submitOnChain,
 } from './client.js';
 import { EscrowState } from './abi.js';
 import { latestSubmission } from '../lib/submissions.js';
+import { evaluateRefundTimeout } from '../lib/refundTimeout.js';
 import { singleFlight } from '../lib/singleFlight.js';
 
 const DEFAULT_DEADLINE_SECS = 7 * 24 * 3600;
@@ -86,4 +87,34 @@ async function settleLocked(agreementId: string): Promise<{ txHash: string; resu
     await db.update(schema.verdicts).set({ settleError: (e as Error).message }).where(eq(schema.verdicts.id, verdict.id));
     throw e;
   }
+}
+
+export type RefundTimeoutResult =
+  | { kind: 'sent'; txHash: string }
+  | { kind: 'v1' }
+  | { kind: 'too_early'; remainingSeconds: number }
+  | { kind: 'wrong_state'; state: number }
+  | { kind: 'in_progress' };
+
+/**
+ * V2 exit from Submitted: refundIfNoVerdict() once the review window has passed. The chain is the authority: state and
+ * window are read on chain. The indexer flips the agreement to refunded from the Refunded event.
+ */
+export async function refundTimeout(agreementId: string): Promise<RefundTimeoutResult> {
+  const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, agreementId)).limit(1);
+  if (!agreement?.escrowAddress) throw new ChainError('Agreement has no escrow');
+  const escrow = agreement.escrowAddress as Address;
+  const r = await singleFlight(`refund-timeout:${agreementId}`, async (): Promise<RefundTimeoutResult> => {
+    const info = await readRefundTimeoutInfo(escrow);
+    if (!info) return { kind: 'v1' };
+    const verdict = evaluateRefundTimeout(info);
+    if (!verdict.eligible) {
+      return verdict.reason === 'too_early'
+        ? { kind: 'too_early', remainingSeconds: verdict.remainingSeconds }
+        : { kind: 'wrong_state', state: verdict.state };
+    }
+    const { hash } = await refundIfNoVerdictOnChain(escrow);
+    return { kind: 'sent', txHash: hash };
+  });
+  return r.busy ? { kind: 'in_progress' } : r.value;
 }

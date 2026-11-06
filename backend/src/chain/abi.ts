@@ -13,6 +13,10 @@ export const escrowAbi = parseAbi([
   'function release(uint256 nonce, bytes sig)',
   'function refund(uint256 nonce, bytes sig)',
   'function refundAfterDeadline()',
+  // V2 only (JobEscrowV2): exit from Submitted when no verdict arrives within the review window.
+  'function refundIfNoVerdict()',
+  'function submittedAt() view returns (uint64)',
+  'function reviewWindow() view returns (uint64)',
   'function state() view returns (uint8)',
   'function price() view returns (uint256)',
   'function delegated() view returns (uint256)',
