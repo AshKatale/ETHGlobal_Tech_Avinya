@@ -1,6 +1,10 @@
 # AgentForge contracts (Hedera EVM)
 
-Solidity 0.8.24, Foundry. Two contracts:
+Solidity 0.8.24, Foundry. V1 (`AgreementFactory`/`JobEscrow`) is deployed and unchanged. V2 (`AgreementFactoryV2`/`JobEscrowV2`) is deployed side by side (see `deployments.json` key `hederaTestnetV2`) and has the same external signatures, events and EIP-712 typed data, plus:
+on-chain A2A cap (`maxDelegatedBps`, default 3000, cumulative vs price, `CapExceeded`); `delegate` only in `Funded`; `submittedAt` and `refundIfNoVerdict()` after `reviewWindow` (default 72 h); factory rejects `price == 0`, deadlines under `minDeadline` (default 900 s) and a zero verifier; owner setters (`setMaxDelegatedBps`, `setReviewWindow`, `setMinDeadline`, `setVerifier`) affect future escrows only and are bounded.
+Tests: `forge test` runs `test/JobEscrow.t.sol` (V1, 13) and `test/JobEscrowV2.t.sol` (V2, 41).
+
+V1 contracts:
 
 - `AgreementFactory`: owned by the backend relayer; creates one `JobEscrow` per agreement.
 - `JobEscrow`: holds one job's HBAR. Flow: `fund` -> `submit` -> `release` (PASS) / `refund` (FAIL), with
@@ -24,5 +28,7 @@ forge create src/AgreementFactory.sol:AgreementFactory --rpc-url https://testnet
 
 Notes: `evm_version = "paris"` keeps the bytecode free of newer opcodes. Paying an address that does not exist on
 Hedera yet auto-creates it and costs ~600k extra gas, so payout calls need a high gas limit.
+
+V2 deploy: same command with `src/AgreementFactoryV2.sol:AgreementFactoryV2` (constructor arg = verifier address).
 
 Deployed addresses live in `deployments.json`.

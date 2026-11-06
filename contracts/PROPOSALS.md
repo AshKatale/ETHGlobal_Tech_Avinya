@@ -1,6 +1,15 @@
-# Contract change proposals (not applied)
+# Contract change proposals
 
-Nothing here changes `src/` or the deployed factory. Each needs an ADR (`architect`) and a redeploy decision (`integration-lead`). Any change to `JobEscrow` needs a new factory deployment, because the escrow bytecode is baked into the factory. Hedera behaviour claims are tagged `[VERIFY]`.
+## Status (2026-11-06)
+Human approved a side-by-side V2 (`src/JobEscrowV2.sol`, `src/AgreementFactoryV2.sol`). V1 is untouched and still the default until `integration-lead` switches `FACTORY_ADDRESS`.
+- P1 implemented in V2 as `refundIfNoVerdict()` (72 h default `reviewWindow`, owner-settable 1 min to 30 days for future escrows). Name differs from the proposal text (`TooEarly` / `WrongState` errors reused).
+- P5 implemented in V2 (`maxDelegatedBps`, default 3000, constructor param, `CapExceeded`), cumulative against `price`; also `delegate` is Funded only (S-03).
+- S-15 implemented in V2 factory: `price > 0`, `deadline >= now + minDeadline` (900 s default); zero verifier rejected in constructor and `setVerifier`.
+- P2 unchanged (`submit` still agent or operator): the backend relays submit for agents with plain wallets, enforcing agent-only would break the flow; doc fix is the recommendation.
+- P3 unchanged (shared `usedNonce`): kept so signing code and ABI (`usedNonce`) stay identical; not exploitable, backend nonces are random.
+- P4 unchanged (`refundAfterDeadline` open to anyone): intended liveness, recipient is always the client.
+
+Original proposals below are kept for history. Each originally needed an ADR (`architect`) and a redeploy decision (`integration-lead`). Each needs an ADR (`architect`) and a redeploy decision (`integration-lead`). Any change to `JobEscrow` needs a new factory deployment, because the escrow bytecode is baked into the factory. Hedera behaviour claims are tagged `[VERIFY]`.
 
 Baseline: `forge test` 13 passed, 0 failed (forge 1.9.0). Existing tests cover every case in the work-order list.
 

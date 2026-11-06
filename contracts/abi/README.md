@@ -23,3 +23,21 @@ State enum: 0 Created, 1 Funded, 2 Submitted, 3 Released, 4 Refunded.
 - views: `state`, `agreementId`, `client`, `agent`, `operator`, `verifier`, `price`, `deadline`, `delegated`, `deliverableHash`, `usedNonce(uint256)`, `domainSeparator()`, `PASS`, `FAIL`
 - EIP-712 domain: name `AgentForge`, version `1`, chainId, verifyingContract = the escrow
 - errors: `WrongState`, `NotAllowed`, `WrongAmount`, `BadSignature`, `NonceUsed`, `TransferFailed`, `TooEarly`
+
+
+# V2 (side by side with V1)
+Files: `JobEscrowV2.json`, `AgreementFactoryV2.json` (`forge inspect JobEscrowV2 abi --json`, `forge inspect AgreementFactoryV2 abi --json`). Same function signatures, events and EIP-712 domain/typehashes as V1, so existing code works unchanged. Deployed address: `deployments.json` key `hederaTestnetV2`.
+
+## AgreementFactoryV2 additions
+- constructor `(address verifier)` reverts `ZeroVerifier` on 0
+- `createEscrow(...)` same signature; now reverts `ZeroPrice`, `DeadlineTooSoon` (deadline < now + `minDeadline`)
+- owner setters (future escrows only): `setVerifier(address)`, `setMaxDelegatedBps(uint256)` (<= 10000), `setReviewWindow(uint64)` (60 s to 30 days), `setMinDeadline(uint64)` (60 s to 30 days); events `VerifierUpdated`, `MaxDelegatedBpsUpdated`, `ReviewWindowUpdated`, `MinDeadlineUpdated`
+- views: `maxDelegatedBps()` (3000), `reviewWindow()` (72 h), `minDeadline()` (900), `MAX_BPS`, `MIN_/MAX_REVIEW_WINDOW`, `MIN_/MAX_MIN_DEADLINE`
+- errors: `NotOwner`, `AlreadyExists`, `ZeroVerifier`, `ZeroPrice`, `DeadlineTooSoon`, `OutOfBounds`
+
+## JobEscrowV2 changes
+- NEW `refundIfNoVerdict()`: anyone, state Submitted and `block.timestamp > submittedAt + reviewWindow`; refunds remaining balance to client; emits `Refunded`
+- NEW views: `submittedAt()`, `maxDelegatedBps()`, `reviewWindow()`
+- `delegate(...)`: operator only, state **Funded only**, reverts `CapExceeded` if `delegated + amount > price * maxDelegatedBps / 10000`
+- constructor adds `(uint256 maxDelegatedBps, uint64 reviewWindow)` (factory-created, backend never calls it)
+- new errors: `CapExceeded`, `BadConfig`
