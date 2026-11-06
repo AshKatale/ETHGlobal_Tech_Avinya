@@ -97,8 +97,10 @@ const aServer = await agentServer(4998, (path, body) => {
   if (path === '/tasks') { receivedTasks.push(body); return { status: 202, json: { accepted: true } }; }
   return { status: 404, json: {} };
 });
-// Sub-agent B: declines the client's quote request (it only works for agents) and answers the sub-task.
-const bServer = await agentServer(4999, (path, body) => {
+// Sub-agent B: a REAL agent if B_ENDPOINT is set (e.g. the Static Auditor on http://localhost:5002), otherwise a stub that
+// declines the client's quote request (it only works for agents) and answers the sub-task.
+const B_ENDPOINT = process.env.B_ENDPOINT;
+const bServer = B_ENDPOINT ? null : await agentServer(4999, (path, body) => {
   if (path === '/quote') return { status: 200, json: { decline: true } };
   if (path === '/a2a') return { status: 200, json: { review: 'No critical issues found by the demo auditor.', received: body.input } };
   return { status: 404, json: {} };
@@ -114,7 +116,7 @@ try {
 
   step('list agent A and sub-agent B (each passes the benchmark; payouts go to funded testnet accounts)');
   const A = await listAgent(listerToken, 'Agent A', A_PRICE, agentAWallet.address, 'http://localhost:4998');
-  const B = await listAgent(listerToken, 'Sub-agent B', B_PRICE, agentBWallet.address, 'http://localhost:4999');
+  const B = await listAgent(listerToken, 'Sub-agent B', B_PRICE, agentBWallet.address, B_ENDPOINT ?? 'http://localhost:4999');
 
   step('client posts a request: the platform asks the listed agents for quotes by itself');
   const request = await call('POST', '/requests', {
@@ -220,6 +222,6 @@ contract AgentToken {
   process.exitCode = 1;
 } finally {
   aServer.close();
-  bServer.close();
+  bServer?.close();
   process.exit(process.exitCode ?? 0);
 }
