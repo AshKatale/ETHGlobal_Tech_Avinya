@@ -23,3 +23,9 @@ export const useGithubStatus = () => {
 
 export const useGithubRepos = (enabled: boolean) =>
   useQuery({ queryKey: ['github-repos'], queryFn: () => api<GithubRepo[]>('/github/repos', { auth: true }), enabled, staleTime: 60_000 });
+
+import type { DesignDetail } from './types';
+
+/** How the contract was designed, plus its on-chain proof. Polls while a sub-agent leg may still be added. */
+export const useDesign = (id: string, settled: boolean) =>
+  useQuery({ queryKey: ['design', id], queryFn: () => api<DesignDetail>(`/agreements/${id}/design`), refetchInterval: settled ? false : 15_000, staleTime: 10_000 });
