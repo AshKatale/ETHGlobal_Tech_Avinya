@@ -35,11 +35,23 @@ function headers(): Record<string, string> {
 }
 
 async function gh<T>(path: string): Promise<T> {
-  const res = await fetch(`https://api.github.com${path}`, { headers: headers() });
-  if (res.status === 404) throw new RepoError('Repo not found or not public');
-  if (res.status === 403 || res.status === 429) throw new RepoError('GitHub rate limit hit; set GITHUB_TOKEN or retry later');
-  if (!res.ok) throw new RepoError(`GitHub error ${res.status}`);
-  return (await res.json()) as T;
+  // GitHub occasionally answers 5xx or times out; a short retry avoids failing a whole benchmark for that.
+  let lastError = 'unknown';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`https://api.github.com${path}`, { headers: headers(), signal: AbortSignal.timeout(20_000) });
+      if (res.status === 404) throw new RepoError('Repo not found or not public');
+      if (res.status === 403 || res.status === 429) throw new RepoError('GitHub rate limit hit; set GITHUB_TOKEN or retry later');
+      if (res.status >= 500) { lastError = `GitHub error ${res.status}`; }
+      else if (!res.ok) throw new RepoError(`GitHub error ${res.status}`);
+      else return (await res.json()) as T;
+    } catch (e) {
+      if (e instanceof RepoError) throw e; // not found / rate limited: retrying will not help
+      lastError = (e as Error).message;
+    }
+    await new Promise((r) => setTimeout(r, 1500 * attempt));
+  }
+  throw new RepoError(lastError);
 }
 
 /** Higher number = read first. README and manifests matter most for review. */
