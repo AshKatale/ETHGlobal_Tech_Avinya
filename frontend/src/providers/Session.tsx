@@ -10,6 +10,9 @@ export type StepKey = 'connect' | 'network' | 'sign';
 export type StepState = 'wait' | 'run' | 'ok' | 'bad';
 const FRESH: Record<StepKey, StepState> = { connect: 'wait', network: 'wait', sign: 'wait' };
 
+/** What the person typed in the connect form. Login needs the password only if the account has one. */
+export type AuthIntent = { mode: 'login' | 'signup'; password?: string; email?: string; displayName?: string; role?: 'client' | 'lister' | 'both' };
+
 type Ctx = {
   ready: boolean;
   signedIn: boolean;
@@ -24,7 +27,9 @@ type Ctx = {
   modalOpen: boolean;
   openConnect: () => void;
   closeConnect: () => void;
-  signIn: () => Promise<void>;
+  signIn: (intent?: AuthIntent) => Promise<void>;
+  /** Back to the form after a failed attempt. */
+  resetSteps: () => void;
   signOut: () => void;
   switchNetwork: () => Promise<void>;
 };
@@ -76,7 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const mark = (k: StepKey, v: StepState) => setSteps((s) => ({ ...s, [k]: v }));
 
-  const signIn = useCallback(async () => {
+  const signIn = useCallback(async (intent: AuthIntent = { mode: 'login' }) => {
     setBusy(true);
     setError(undefined);
     setSteps({ ...FRESH, connect: 'run' });
@@ -103,15 +108,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // 3. prove ownership of the account: sign a one-time message, no transaction
       current = 'sign';
       mark('sign', 'run');
-      const { nonce, message } = await api<{ nonce: string; message: string }>('/auth/nonce', { body: { address } });
+      const { nonce, message, passwordRequired } = await api<{ nonce: string; message: string; passwordRequired: boolean }>('/auth/nonce', { body: { address } });
+      if (intent.mode === 'login' && passwordRequired && !intent.password) throw new Error('This account is protected by a password. Go back, enter it and try again.');
       const signature = await signMessageAsync({ message });
-      const out = await api<{ token: string; expiresAt: string }>('/auth/verify', { body: { address, nonce, signature } });
+      const out = intent.mode === 'signup'
+        ? await api<{ token: string; expiresAt: string }>('/auth/signup', { body: { address, nonce, signature, email: intent.email, password: intent.password, displayName: intent.displayName || undefined, role: intent.role } })
+        : await api<{ token: string; expiresAt: string }>('/auth/verify', { body: { address, nonce, signature, password: intent.password || undefined } });
       const stored: StoredSession = { token: out.token, address: address as string, expiresAt: out.expiresAt };
       writeSession(stored);
       setSession(stored);
       mark('sign', 'ok');
       setModalOpen(false);
-      toast('Wallet connected', `${shortAddr(address)} · Hedera testnet`);
+      toast(intent.mode === 'signup' ? 'Account created' : 'Signed in', `${shortAddr(address)} · Hedera testnet`);
     } catch (e) {
       mark(current, 'bad');
       setError(errMessage(e));
@@ -127,6 +135,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     toast('Wallet disconnected', '', 'info');
   }, [disconnect, toast]);
 
+  const resetSteps = useCallback(() => { setSteps(FRESH); setError(undefined); }, []);
+
   const switchNetwork = useCallback(async () => {
     try { await switchChainAsync({ chainId: CHAIN_ID }); } catch (e) { toast('Could not switch network', errMessage(e), 'bad'); }
   }, [switchChainAsync, toast]);
@@ -140,8 +150,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     hasWallet, steps, error, busy, modalOpen,
     openConnect: () => { setError(undefined); setSteps(FRESH); setModalOpen(true); },
     closeConnect: () => setModalOpen(false),
-    signIn, signOut, switchNetwork,
-  }), [ready, session, isConnected, walletAddr, chainId, hasWallet, steps, error, busy, modalOpen, signIn, signOut, switchNetwork]);
+    signIn, resetSteps, signOut, switchNetwork,
+  }), [ready, session, isConnected, walletAddr, chainId, hasWallet, steps, error, busy, modalOpen, signIn, resetSteps, signOut, switchNetwork]);
 
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
 }

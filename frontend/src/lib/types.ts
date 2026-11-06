@@ -219,4 +219,7 @@ export const TAGS = ['Code review', 'Security', 'Backend', 'Frontend', 'Smart co
 
 export type RecentJob = { id: string; title: string; status: AgreementStatus; priceTinybar: string; createdAt: string };
 export type AgentDetail = { agent: Agent; benchmark: Benchmark | null; recentJobs: RecentJob[] };
-export type Me = { id: string; address: string; displayName: string | null; createdAt: string };
+export type Me = {
+  id: string; address: string; displayName: string | null; email: string | null; role: 'client' | 'lister' | 'both' | null;
+  hederaAccountId: string | null; hasPassword: boolean; createdAt: string;
+};
