@@ -8,6 +8,7 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "flow": "tsx scripts/flow.ts",
+    "token": "tsx scripts/token.ts",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
