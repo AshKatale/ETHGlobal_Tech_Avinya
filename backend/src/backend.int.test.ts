@@ -194,7 +194,8 @@ describe.skipIf(!HAS_DB)('submit, settle and latest submission', () => {
     await db.insert(schema.submissions).values({ agreementId: agreement.id, content: 'older', deliverableHash: 'c', submittedAt: new Date(Date.now() - 120_000) });
     expect((await latestSubmission(agreement.id))?.content).toBe('new');
     const app = await buildServer();
-    const res = await app.inject({ method: 'GET', url: `/agreements/${agreement.id}` });
+    // submission content is visible to the client only (S-09), so read it with the client session
+    const res = await app.inject({ method: 'GET', url: `/agreements/${agreement.id}`, headers: { authorization: `Bearer ${u.token}` } });
     expect(res.json().submission.content).toBe('new');
     await app.close();
   });

@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
-import { requireAgent, requireUser, sha256 } from '../lib/auth.js';
+import { optionalAuth, requireAgent, requireUser, sha256 } from '../lib/auth.js';
+import { canViewPrivate, publicVerdict, publicVerification } from '../lib/access.js';
 import { canTransition, type AgreementStatus } from '../lib/stateMachine.js';
 import { ensureSubmittedOnChain, settle } from '../chain/ops.js';
 import { fetchRepo } from '../lib/github.js';
@@ -107,17 +108,19 @@ export async function jobRoutes(app: FastifyInstance) {
     return reply.code(202).send({ status: 'verifying' });
   });
 
-  app.get('/agreements/:id/verification', async (req, reply) => {
+  app.get('/agreements/:id/verification', { preHandler: optionalAuth }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
     if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
     const runs = await db.select().from(schema.verifications).where(eq(schema.verifications.agreementId, id)).orderBy(desc(schema.verifications.createdAt));
     const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
+    const full = await canViewPrivate(req, agreement); // S-09: raw errors and work-derived text only for participants
     return {
       status: agreement.status,
-      latest: runs[0] ?? null,
-      history: runs,
-      verdict: verdict ?? null,
+      latest: full ? (runs[0] ?? null) : publicVerification(runs[0]),
+      history: full ? runs : runs.map((r) => publicVerification(r)),
+      verdict: full ? (verdict ?? null) : publicVerdict(verdict),
+      viewerAccess: full ? 'full' : 'public',
       disclaimer: 'Automated verification is not a professional audit.',
     };
   });

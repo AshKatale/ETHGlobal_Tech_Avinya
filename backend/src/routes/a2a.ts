@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
-import { requireAgent } from '../lib/auth.js';
+import { optionalAuth, requireAgent } from '../lib/auth.js';
+import { canViewPrivate, publicCall } from '../lib/access.js';
 import { env } from '../env.js';
 import { remainingBudget, withinBudget } from '../lib/a2aBudget.js';
 import { reserveA2aCall } from '../lib/a2aReserve.js';
@@ -124,8 +125,11 @@ export async function a2aRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/agreements/:id/a2a', async (req) => {
+  app.get('/agreements/:id/a2a', { preHandler: optionalAuth }, async (req) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-    return db.select().from(schema.a2aCalls).where(eq(schema.a2aCalls.agreementId, id));
+    const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    const calls = await db.select().from(schema.a2aCalls).where(eq(schema.a2aCalls.agreementId, id));
+    if (!agreement) return calls.map(publicCall); // keep the old behaviour (empty list) for an unknown id
+    return (await canViewPrivate(req, agreement)) ? calls : calls.map(publicCall);
   });
 }

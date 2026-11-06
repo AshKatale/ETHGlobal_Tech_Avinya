@@ -84,3 +84,48 @@ describe.skipIf(!HAS_DB)('S-15 deadlines', () => {
     await app.close();
   });
 });
+
+describe.skipIf(!HAS_DB)('S-09 data exposure', () => {
+  it('anonymous and strangers get metadata only; client, owner and agent key get the content', async () => {
+    const app = await buildServer();
+    const client = await fx.user();
+    const owner = await fx.user();
+    const stranger = await fx.user();
+    const callee = await fx.agent(owner.id);
+    const ag = await fx.agent(owner.id);
+    const agreement = await fx.agreement(client.id, ag.id, { status: 'submitted' });
+    await db.update(schema.agreements).set({ dispatchError: 'ECONNREFUSED 10.1.2.3' }).where(eq(schema.agreements.id, agreement.id));
+    await db.insert(schema.submissions).values({ agreementId: agreement.id, content: 'TOP-SECRET-WORK', deliverableHash: 'abc123' });
+    await db.insert(schema.verifications).values({ agreementId: agreement.id, result: 'ERROR', error: 'upstream exploded at 10.9.9.9' });
+    await db.insert(schema.verdicts).values({ agreementId: agreement.id, result: 'PASS', verifierSig: '0xsig', nonce: 7n, settleTxHash: '0xsettle', settleError: 'viem raw error' });
+    await db.insert(schema.a2aCalls).values({ agreementId: agreement.id, callerAgentId: ag.id, calleeAgentId: callee.id, priceTinybar: '10', status: 'failed', blockedReason: 'callee responded 500: internal-host' });
+
+    const urls = [`/agreements/${agreement.id}`, `/agreements/${agreement.id}/verification`, `/agreements/${agreement.id}/a2a`];
+    const get = (url: string, headers: Record<string, string> = {}) => app.inject({ method: 'GET', url, headers });
+    const leaks = /TOP-SECRET|10\.1\.2\.3|10\.9\.9\.9|viem raw error|internal-host/;
+
+    for (const headers of [{}, auth(stranger.token), { authorization: 'Bearer garbage' }]) {
+      for (const url of urls) {
+        const res = await get(url, headers);
+        expect(res.statusCode).toBe(200);
+        expect(res.body, url).not.toMatch(leaks);
+      }
+    }
+    const pub = (await get(urls[0])).json();
+    expect(pub.viewerAccess).toBe('public');
+    expect(pub.submission).toMatchObject({ deliverableHash: 'abc123', kind: 'text' });
+    expect(pub.verdict).toMatchObject({ result: 'PASS', verifierSig: '0xsig', nonce: '7', settleTxHash: '0xsettle' });
+    expect((await get(urls[1])).json().verdict.settleTxHash).toBe('0xsettle');
+
+    for (const headers of [auth(client.token), auth(owner.token), { 'x-agent-key': ag.key }]) {
+      const full = (await get(urls[0], headers)).json();
+      expect(full.viewerAccess).toBe('full');
+      expect(full.submission.content).toBe('TOP-SECRET-WORK');
+      expect((await get(urls[1], headers)).body).toMatch(/upstream exploded/);
+      expect((await get(urls[2], headers)).body).toMatch(/internal-host/);
+    }
+    // another agent's key is not a participant
+    expect((await get(urls[0], { 'x-agent-key': callee.key })).json().viewerAccess).toBe('public');
+    await app.close();
+  });
+});

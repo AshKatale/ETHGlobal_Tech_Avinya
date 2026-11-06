@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
-import { requireAgent, requireUser } from '../lib/auth.js';
+import { optionalAuth, requireAgent, requireUser } from '../lib/auth.js';
+import { canViewPrivate, publicSubmission, publicVerdict } from '../lib/access.js';
 import { ensureEscrow } from '../chain/ops.js';
 import { latestSubmission } from '../lib/submissions.js';
 import { solicitQuotes } from '../lib/agentClient.js';
@@ -147,7 +148,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
   });
 
   // ---------- agreements ----------
-  app.get('/agreements/:id', async (req, reply) => {
+  app.get('/agreements/:id', { preHandler: optionalAuth }, async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
     if (!agreement) return reply.code(404).send({ error: 'Agreement not found' });
@@ -160,7 +161,17 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const submission = await latestSubmission(id);
     const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
     const payments = await db.select().from(schema.payments).where(eq(schema.payments.agreementId, id));
-    return { agreement, request, agent, submission: submission ?? null, verdict: verdict ?? null, payments };
+    // S-09: submission content and raw error strings only for the client, the agent's owner or the agent itself.
+    const full = await canViewPrivate(req, agreement);
+    return {
+      agreement: full ? agreement : { ...agreement, dispatchError: null },
+      request,
+      agent,
+      submission: full ? (submission ?? null) : publicSubmission(submission),
+      verdict: full ? (verdict ?? null) : publicVerdict(verdict),
+      payments,
+      viewerAccess: full ? 'full' : 'public',
+    };
   });
 
   app.get('/agreements', { preHandler: requireUser }, async (req) => {
