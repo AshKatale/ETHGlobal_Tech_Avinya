@@ -6,6 +6,7 @@ import { requireAgent, requireUser } from '../lib/auth.js';
 import { ensureEscrow } from '../chain/ops.js';
 import { latestSubmission } from '../lib/submissions.js';
 import { solicitQuotes } from '../lib/agentClient.js';
+import { deadlineError, defaultDeadline } from '../lib/deadline.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 const idParam = z.object({ id: z.string().uuid() });
@@ -24,6 +25,10 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         deadlineAt: z.string().datetime().optional(),
       })
       .parse(req.body);
+    // S-15: no deadline under 15 minutes away; default is 7 days.
+    const deadline = body.deadlineAt ? new Date(body.deadlineAt) : defaultDeadline();
+    const dErr = body.deadlineAt ? deadlineError(deadline) : null;
+    if (dErr) return reply.code(400).send({ error: dErr });
     const [row] = await db
       .insert(schema.requests)
       .values({
@@ -32,7 +37,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         requirements: body.requirements,
         checksRequested: body.checksRequested,
         budgetTinybar: body.budgetTinybar,
-        deadlineAt: body.deadlineAt ? new Date(body.deadlineAt) : null,
+        deadlineAt: deadline,
       })
       .returning();
     // Background: ask every listed agent with an endpoint for a quote. Failures are ignored.
@@ -93,14 +98,30 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, quote.requestId)).limit(1);
     if (request.clientUserId !== req.user!.id) return reply.code(403).send({ error: 'Not your request' });
     if (request.status !== 'open' || quote.status !== 'open') return reply.code(409).send({ error: 'Already decided' });
+    if (request.deadlineAt) {
+      const dErr = deadlineError(request.deadlineAt);
+      if (dErr) return reply.code(409).send({ error: `Request deadline is too close to accept: ${dErr}` });
+    }
 
+    // S-14: the first statement is an atomic claim (open -> agreed). Concurrent accepts: exactly one gets a row back,
+    // the others abort and roll back, so one request can never produce two agreements.
     const agreement = await db.transaction(async (tx) => {
-      await tx.update(schema.quotes).set({ status: 'accepted' }).where(eq(schema.quotes.id, quote.id));
+      const claimed = await tx
+        .update(schema.requests)
+        .set({ status: 'agreed' })
+        .where(and(eq(schema.requests.id, request.id), eq(schema.requests.status, 'open')))
+        .returning({ id: schema.requests.id });
+      if (claimed.length === 0) return null;
+      const accepted = await tx
+        .update(schema.quotes)
+        .set({ status: 'accepted' })
+        .where(and(eq(schema.quotes.id, quote.id), eq(schema.quotes.status, 'open')))
+        .returning({ id: schema.quotes.id });
+      if (accepted.length === 0) { tx.rollback(); }
       await tx
         .update(schema.quotes)
         .set({ status: 'rejected' })
         .where(and(eq(schema.quotes.requestId, request.id), eq(schema.quotes.status, 'open')));
-      await tx.update(schema.requests).set({ status: 'agreed' }).where(eq(schema.requests.id, request.id));
       const [a] = await tx
         .insert(schema.agreements)
         .values({
@@ -113,7 +134,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         })
         .returning();
       return a;
-    });
+    }).catch((e) => { if ((e as Error).name === 'TransactionRollbackError') return null; throw e; });
+    if (!agreement) return reply.code(409).send({ error: 'Already decided' });
     // Create the per-agreement JobEscrow on Hedera. If the chain is unavailable the agreement still exists;
     // the client can retry with POST /agreements/:id/escrow.
     try {
