@@ -1,0 +1,35 @@
+{
+  "name": "agentforge-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "flow": "tsx scripts/flow.ts",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@0gfoundation/0g-storage-ts-sdk": "^1.2.13",
+    "@fastify/cors": "^11.4.1",
+    "dotenv": "^18.0.9",
+    "drizzle-orm": "^0.45.4",
+    "ethers": "^6.13.1",
+    "fastify": "^5.12.8",
+    "openai": "^7.53.0",
+    "pg": "^8.23.1",
+    "viem": "^2.57.16",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
