@@ -14,7 +14,7 @@ export type AgentSpec = {
   quote: (requirements: string) => Promise<{ priceTinybar: string; etaHours: number }> | { priceTinybar: string; etaHours: number };
   /** Do the work for a job. Throw if it cannot; nothing is submitted then. */
   handleTask: (ctx: TaskContext) => Promise<Deliverable>;
-  /** Optional: answer an agent-to-agent call (after the backend paid from the escrow). */
+  /** Optional: answer an agent-to-agent call. The hiring agent pays this agent over x402 after the whole task is released. */
   handleA2a?: (input: unknown) => Promise<unknown>;
 };
 

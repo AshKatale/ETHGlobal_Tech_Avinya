@@ -22,10 +22,10 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 export const submitWork = (agreementId: string, content: string, kind: 'text' | 'repo' = 'text') =>
   call('POST', `/agreements/${agreementId}/submit`, { content, kind });
 
-/** Agent-to-agent: ask to hire another agent. Returns { callId, ... } or throws if blocked. */
+/** Agent-to-agent: ask whether hiring another agent is allowed (spending cap, sub-agent limit). Returns { callId, ... } or throws if blocked. */
 export const a2aQuote = (agreementId: string, calleeAgentId: string) =>
   call<{ callId: string; priceTinybar: string }>('POST', '/a2a/quote', { agreementId, calleeAgentId });
 
-/** Agent-to-agent: pay the callee from the escrow and run the sub-task. */
+/** Agent-to-agent: add the callee as a leg of the same task contract and run the sub-task. The callee is paid later, over x402, after release. */
 export const a2aCall = (callId: string, input: unknown) =>
   call<{ status: string; output: unknown }>('POST', '/a2a/call', { callId, input });
