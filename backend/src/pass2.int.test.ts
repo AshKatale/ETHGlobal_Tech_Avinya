@@ -161,3 +161,24 @@ describe.skipIf(!HAS_DB)('S-21 stuck verification recovery', () => {
     expect(runs.some((r) => r.result === 'FAIL')).toBe(false);
   });
 });
+
+describe.skipIf(!HAS_DB)('S-06 single-flight settle', () => {
+  it('two and eight concurrent settles send one transaction; the others return the current state', async () => {
+    const app = await buildServer();
+    const client = await fx.user();
+    const ag = await fx.agent(client.id);
+    const agreement = await fx.agreement(client.id, ag.id, { status: 'verifying' });
+    await db.update(schema.agreements).set({ escrowAddress: `0x${'cd'.repeat(20)}` }).where(eq(schema.agreements.id, agreement.id));
+    await db.insert(schema.verdicts).values({ agreementId: agreement.id, result: 'PASS' });
+    chain.delay = 600; // keep the first settle in flight while the others arrive
+
+    const go = () => app.inject({ method: 'POST', url: `/agreements/${agreement.id}/settle`, headers: auth(client.token) });
+    const res = await Promise.all(Array.from({ length: 8 }, go));
+    expect(res.every((r) => r.statusCode === 200)).toBe(true);
+    expect(chain.sent.filter((s) => s === 'release')).toHaveLength(1);
+    const bodies = res.map((r) => r.json());
+    expect(bodies.filter((b) => b.txHash && !b.already)).toHaveLength(1);
+    expect(bodies.filter((b) => b.inProgress === true)).toHaveLength(7);
+    await app.close();
+  });
+});

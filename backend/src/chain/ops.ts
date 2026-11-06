@@ -8,6 +8,7 @@ import {
 } from './client.js';
 import { EscrowState } from './abi.js';
 import { latestSubmission } from '../lib/submissions.js';
+import { singleFlight } from '../lib/singleFlight.js';
 
 const DEFAULT_DEADLINE_SECS = 7 * 24 * 3600;
 
@@ -49,8 +50,20 @@ export async function ensureSubmittedOnChain(agreementId: string): Promise<void>
   } // Submitted/Released/Refunded: nothing to do
 }
 
-/** Sign the verdict and send release (PASS) or refund (FAIL). Records the tx; the indexer flips the status. */
-export async function settle(agreementId: string): Promise<{ txHash: string; result: string } | { already: true }> {
+export type SettleResult = { txHash: string; result: string } | { already: true; inProgress?: true; txHash?: string | null };
+
+/**
+ * Sign the verdict and send release (PASS) or refund (FAIL). Records the tx; the indexer flips the status.
+ * Single-flight per agreement (S-06): if another settle holds the lock, return the current state instead of sending again.
+ */
+export async function settle(agreementId: string): Promise<SettleResult> {
+  const r = await singleFlight(`settle:${agreementId}`, () => settleLocked(agreementId));
+  if (!r.busy) return r.value;
+  const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, agreementId)).limit(1);
+  return { already: true, inProgress: true, txHash: verdict?.settleTxHash ?? null };
+}
+
+async function settleLocked(agreementId: string): Promise<{ txHash: string; result: string } | { already: true }> {
   const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, agreementId)).limit(1);
   const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, agreementId)).limit(1);
   if (!agreement?.escrowAddress) throw new ChainError('Agreement has no escrow');
