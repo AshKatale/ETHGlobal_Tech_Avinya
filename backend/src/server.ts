@@ -8,6 +8,10 @@ import { marketplaceRoutes } from './routes/marketplace.js';
 import { benchmarkRoutes } from './routes/benchmark.js';
 import { jobRoutes } from './routes/jobs.js';
 import { a2aRoutes } from './routes/a2a.js';
+import { startIndexer } from './chain/indexer.js';
+
+// Postgres bigint columns (verdict nonce) come back as BigInt; make them JSON-safe as decimal strings.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (this: bigint) { return this.toString(); };
 
 export async function buildServer() {
   const app = Fastify({ logger: { level: 'info' } });
@@ -43,4 +47,5 @@ export async function buildServer() {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const app = await buildServer();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
+  startIndexer();
 }
