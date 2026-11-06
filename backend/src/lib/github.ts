@@ -3,6 +3,8 @@
 // Unverified against GitHub's docs in this session; if one 404s, check the docs. Unauthenticated limit is 60 req/hour.
 // Set GITHUB_TOKEN in .env to raise it.
 
+import { gunzipSync } from 'node:zlib';
+
 export class RepoError extends Error {}
 
 export type RepoSnapshot = {
@@ -37,7 +39,7 @@ function headers(): Record<string, string> {
 async function gh<T>(path: string): Promise<T> {
   const res = await fetch(`https://api.github.com${path}`, { headers: headers() });
   if (res.status === 404) throw new RepoError('Repo not found or not public');
-  if (res.status === 403 || res.status === 429) throw new RepoError('GitHub rate limit hit; set GITHUB_TOKEN or retry later');
+  if (res.status === 403 || res.status === 429) throw new RateLimitError('GitHub rate limit hit; set GITHUB_TOKEN or retry later');
   if (!res.ok) throw new RepoError(`GitHub error ${res.status}`);
   return (await res.json()) as T;
 }
@@ -54,8 +56,70 @@ function priority(path: string): number {
   return 10;
 }
 
+class RateLimitError extends RepoError {}
+
+/**
+ * Fallback when the unauthenticated REST API is rate limited: download codeload.github.com/{o}/{r}/tar.gz/HEAD
+ * (not counted against the REST limit; verified by running it) and read the commit sha from the tar's pax global header.
+ */
+async function fetchRepoTarball(url: string, owner: string, repo: string): Promise<RepoSnapshot> {
+  const res = await fetch(`https://codeload.github.com/${owner}/${repo}/tar.gz/HEAD`, { headers: { 'User-Agent': 'agentforge' }, redirect: 'follow' });
+  if (res.status === 404) throw new RepoError('Repo not found or not public');
+  if (!res.ok) throw new RepoError(`GitHub tarball error ${res.status}`);
+  const tar = gunzipSync(Buffer.from(await res.arrayBuffer()));
+  if (tar.length > 80_000_000) throw new RepoError('Repo is too large');
+  let commit = '';
+  const entries: { path: string; size: number; body: Buffer }[] = [];
+  let off = 0;
+  while (off + 512 <= tar.length) {
+    const h = tar.subarray(off, off + 512);
+    if (h.every((b) => b === 0)) break;
+    const name = h.subarray(0, 100).toString('utf8').replace(/\0.*$/, '');
+    const size = parseInt(h.subarray(124, 136).toString('utf8').replace(/\0.*$/, '').trim() || '0', 8);
+    const type = String.fromCharCode(h[156]);
+    const body = tar.subarray(off + 512, off + 512 + size);
+    if (type === 'g') {
+      const m = /comment=([0-9a-f]{40})/.exec(body.toString('utf8'));
+      if (m) commit = m[1];
+    } else if (type === '0' || type === '\0') {
+      const prefix = h.subarray(345, 500).toString('utf8').replace(/\0.*$/, '');
+      const full = prefix ? `${prefix}/${name}` : name;
+      entries.push({ path: full.split('/').slice(1).join('/'), size, body });
+    }
+    off += 512 + Math.ceil(size / 512) * 512;
+  }
+  const blobs = entries.filter((e) => e.path && !SKIP_DIRS.test(e.path));
+  const treePaths = blobs.map((b) => b.path).slice(0, 400);
+  const candidates = blobs
+    .filter((b) => TEXT_EXT.test(b.path) && !LOCKFILES.test(b.path) && b.size < 200_000)
+    .sort((a, b) => priority(b.path) - priority(a.path))
+    .slice(0, MAX_FILES);
+  const files: Record<string, string> = {};
+  let total = 0;
+  let truncated = blobs.length > treePaths.length;
+  for (const f of candidates) {
+    if (total >= MAX_TOTAL_CHARS) { truncated = true; break; }
+    let text = f.body.toString('utf8');
+    if (text.length > MAX_FILE_CHARS) { text = text.slice(0, MAX_FILE_CHARS); truncated = true; }
+    if (total + text.length > MAX_TOTAL_CHARS) { text = text.slice(0, MAX_TOTAL_CHARS - total); truncated = true; }
+    files[f.path] = text;
+    total += text.length;
+  }
+  if (Object.keys(files).length === 0) throw new RepoError('No readable source files found in this repo');
+  return { url, owner, repo, commit: commit || 'HEAD', tree: treePaths, files, truncated };
+}
+
 export async function fetchRepo(url: string): Promise<RepoSnapshot> {
   const { owner, repo } = parseRepoUrl(url);
+  try {
+    return await fetchRepoApi(url, owner, repo);
+  } catch (e) {
+    if (e instanceof RateLimitError) return fetchRepoTarball(url, owner, repo);
+    throw e;
+  }
+}
+
+async function fetchRepoApi(url: string, owner: string, repo: string): Promise<RepoSnapshot> {
   const meta = await gh<{ default_branch: string }>(`/repos/${owner}/${repo}`);
   const head = await gh<{ sha: string }>(`/repos/${owner}/${repo}/commits/${meta.default_branch}`);
   const tree = await gh<{ tree: { path: string; type: string; size?: number }[]; truncated: boolean }>(
