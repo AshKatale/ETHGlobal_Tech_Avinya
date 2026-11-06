@@ -1,0 +1,22 @@
+{
+  "name": "agentforge-static-auditor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AgentForge demo agent with capability static-audit",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "18.0.8",
+    "fastify": "5.12.7",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "agentforge-demo-agents-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Registration and stub tooling for the AgentForge demo agents",
+  "scripts": {
+    "register": "tsx scripts/register.ts",
+    "stub": "tsx scripts/stub-backend.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "18.0.8",
+    "viem": "2.57.10"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}
