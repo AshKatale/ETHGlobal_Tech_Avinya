@@ -47,9 +47,22 @@ export function githubErrorMessage(status: number, hasToken: boolean, rateRemain
 }
 
 async function gh<T>(path: string, token?: string | null): Promise<T> {
-  const res = await fetch(`https://api.github.com${path}`, { headers: headers(token) });
-  if (!res.ok) throw new RepoError(githubErrorMessage(res.status, !!(token ?? process.env.GITHUB_TOKEN), res.headers.get('x-ratelimit-remaining')));
-  return (await res.json()) as T;
+  const hasToken = !!(token ?? process.env.GITHUB_TOKEN);
+  // GitHub occasionally answers 5xx or times out; a short retry avoids failing a whole benchmark for that.
+  let lastError = 'unknown';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`https://api.github.com${path}`, { headers: headers(token), signal: AbortSignal.timeout(20_000) });
+      if (res.status >= 500) { lastError = `GitHub error ${res.status}`; }
+      else if (!res.ok) throw new RepoError(githubErrorMessage(res.status, hasToken, res.headers.get('x-ratelimit-remaining')));
+      else return (await res.json()) as T;
+    } catch (e) {
+      if (e instanceof RepoError) throw e; // not found / rate limited / bad token: retrying will not help
+      lastError = (e as Error).message;
+    }
+    await new Promise((r) => setTimeout(r, 1500 * attempt));
+  }
+  throw new RepoError(lastError);
 }
 
 /** Higher number = read first. README and manifests matter most for review. */

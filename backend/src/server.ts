@@ -10,7 +10,9 @@ import { benchmarkRoutes } from './routes/benchmark.js';
 import { jobRoutes } from './routes/jobs.js';
 import { a2aRoutes } from './routes/a2a.js';
 import { githubRoutes } from './routes/github.js';
+import { agentApiRoutes } from './routes/agentApi.js';
 import { startIndexer } from './chain/indexer.js';
+import { startGateway } from './x402/gateway.js';
 
 // Postgres bigint columns (verdict nonce) come back as BigInt; make them JSON-safe as decimal strings.
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (this: bigint) { return this.toString(); };
@@ -44,6 +46,7 @@ export async function buildServer() {
   await app.register(jobRoutes);
   await app.register(a2aRoutes);
   await app.register(githubRoutes);
+  await app.register(agentApiRoutes);
   return app;
 }
 
@@ -51,4 +54,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const app = await buildServer();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   startIndexer();
+  startGateway();
 }

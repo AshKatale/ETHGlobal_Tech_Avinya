@@ -1,5 +1,7 @@
 // Plain-TypeScript checks. No AI, no network. Each returns { name, passed, detail }.
-export type CheckItem = { name: string; passed: boolean; detail: string };
+// kind: 'criterion' = a requirement from the client's text (counts towards the pass threshold)
+//       'check'     = a requested hard check (build, secrets, security...) that must always pass
+export type CheckItem = { name: string; passed: boolean; detail: string; kind?: 'criterion' | 'check' };
 export type Files = Record<string, string>;
 
 const has = (files: Files, re: RegExp) => Object.keys(files).some((p) => re.test(p));

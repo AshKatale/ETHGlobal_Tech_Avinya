@@ -3,7 +3,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { requireAgent, requireUser } from '../lib/auth.js';
-import { ensureEscrow } from '../chain/ops.js';
+import { ensureTask, fundUrl, loadDesignInputs, payoutUrl } from '../chain/ops.js';
+import { requestDesign } from '../designer/client.js';
+import { dispatchTask, requestQuotes } from '../agents/dispatch.js';
 
 const tinybarStr = z.string().regex(/^\d+$/, 'tinybar must be a whole-number string');
 const idParam = z.object({ id: z.string().uuid() });
@@ -33,7 +35,20 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         deadlineAt: body.deadlineAt ? new Date(body.deadlineAt) : null,
       })
       .returning();
-    return reply.code(201).send(row);
+    // Ask the listed agents for quotes in the background; their quotes appear on GET /requests/:id as they answer.
+    void requestQuotes(row.id)
+      .then((r) => app.log.info({ requestId: row.id, ...r }, 'quote requests sent'))
+      .catch((e) => app.log.error(e, 'quote fan-out failed'));
+    return reply.code(201).send({ ...row, quoting: 'started' });
+  });
+
+  // Ask the agents again (e.g. a new agent was listed, or an agent was down the first time).
+  app.post('/requests/:id/request-quotes', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, id)).limit(1);
+    if (!request) return reply.code(404).send({ error: 'Request not found' });
+    if (request.clientUserId !== req.user!.id) return reply.code(403).send({ error: 'Not your request' });
+    return requestQuotes(id);
   });
 
   app.get('/requests', async (req) => {
@@ -110,13 +125,28 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         .returning();
       return a;
     });
-    // Create the per-agreement JobEscrow on Hedera. If the chain is unavailable the agreement still exists;
-    // the client can retry with POST /agreements/:id/escrow.
+    // The Solidity agent designs the terms and deploys this task's single contract. If it (or the chain) is unavailable
+    // the agreement still exists; POST /agreements/:id/escrow retries.
     try {
-      const escrowAddress = await ensureEscrow(agreement.id);
-      return reply.code(201).send({ ...agreement, escrowAddress });
+      const escrowAddress = await ensureTask(agreement.id);
+      const [fresh] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, agreement.id)).limit(1);
+      return reply.code(201).send({ ...fresh, escrowAddress });
     } catch (e) {
       return reply.code(201).send({ ...agreement, escrowError: (e as Error).message });
+    }
+  });
+
+  // Preview the contract terms the Solidity agent would design for this quote. No chain access, nothing saved.
+  app.post('/quotes/:id/terms', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    let inputs;
+    try { inputs = await loadDesignInputs(id); } catch { return reply.code(404).send({ error: 'Quote not found' }); }
+    if (inputs.request.clientUserId !== req.user!.id) return reply.code(403).send({ error: 'Not your request' });
+    try {
+      const d = await requestDesign(inputs.designInput);
+      return { spec: d.spec, specHash: d.specHash, trust: d.trust, source: d.source, agent: { id: inputs.agent.id, name: inputs.agent.name } };
+    } catch (e) {
+      return reply.code(502).send({ error: (e as Error).message });
     }
   });
 
@@ -134,7 +164,36 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const [submission] = await db.select().from(schema.submissions).where(eq(schema.submissions.agreementId, id)).limit(1);
     const [verdict] = await db.select().from(schema.verdicts).where(eq(schema.verdicts.agreementId, id)).limit(1);
     const payments = await db.select().from(schema.payments).where(eq(schema.payments.agreementId, id));
-    return { agreement, request, agent, submission: submission ?? null, verdict: verdict ?? null, payments };
+    const [specRow] = await db.select().from(schema.contractSpecs).where(and(eq(schema.contractSpecs.agreementId, id), eq(schema.contractSpecs.kind, 'root'))).limit(1);
+    const subLegs = await db.select().from(schema.subLegs).where(eq(schema.subLegs.agreementId, id));
+    return {
+      agreement, request, agent, submission: submission ?? null, verdict: verdict ?? null, payments,
+      terms: specRow ? { spec: specRow.spec, specHash: specRow.specHash, source: specRow.source } : null,
+      subLegs: subLegs.map((l) => ({ ...l, payUrl: payoutUrl(id, l.legId) })),
+    };
+  });
+
+  // How the client funds the task: over x402 (agents, key-based clients) or by calling fund() from a wallet.
+  app.get('/agreements/:id/funding', async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [a] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!a) return reply.code(404).send({ error: 'Agreement not found' });
+    if (!a.escrowAddress) return reply.code(409).send({ error: 'Task contract not deployed yet; retry POST /agreements/:id/escrow' });
+    return {
+      status: a.status,
+      priceTinybar: String(a.priceTinybar),
+      taskContract: a.escrowAddress,
+      taskAccountId: a.taskAccountId,
+      x402: { url: fundUrl(id), network: 'hedera:testnet', asset: '0.0.0', amountTinybar: String(a.priceTinybar), payTo: a.taskAccountId },
+      wallet: { method: 'fund()', to: a.escrowAddress, valueTinybar: String(a.priceTinybar), note: 'JSON-RPC value is tinybar x 10^10 (weibar)' },
+    };
+  });
+
+  // Where agent A pays each sub-agent (over x402) after the task is released.
+  app.get('/agreements/:id/payouts', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const legs = await db.select().from(schema.subLegs).where(eq(schema.subLegs.agreementId, id));
+    return legs.map((l) => ({ legId: l.legId, status: l.status, priceTinybar: String(l.priceTinybar), payeeAccountId: l.payeeAccountId, payUrl: payoutUrl(id, l.legId), payoutTx: l.payoutTx }));
   });
 
   app.get('/agreements', { preHandler: requireUser }, async (req) => {
@@ -153,9 +212,19 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     if (!a) return reply.code(404).send({ error: 'Agreement not found' });
     if (a.clientUserId !== req.user!.id) return reply.code(403).send({ error: 'Not your agreement' });
     try {
-      return { escrowAddress: await ensureEscrow(id) };
+      return { escrowAddress: await ensureTask(id) };
     } catch (e) {
       return reply.code(502).send({ error: `Chain error: ${(e as Error).message}` });
     }
+  });
+
+  // Tell the agent to start work again (it was down when the task was funded).
+  app.post('/agreements/:id/dispatch', { preHandler: requireUser }, async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [a] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)).limit(1);
+    if (!a) return reply.code(404).send({ error: 'Agreement not found' });
+    if (a.clientUserId !== req.user!.id) return reply.code(403).send({ error: 'Not your agreement' });
+    if (a.status !== 'funded') return reply.code(409).send({ error: `Agreement is ${a.status}; work starts once it is funded` });
+    return { status: await dispatchTask(id) };
   });
 }

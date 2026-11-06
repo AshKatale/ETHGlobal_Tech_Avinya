@@ -94,7 +94,11 @@ export const agreements = pgTable('agreements', {
   agentId: uuid('agent_id').notNull().references(() => agents.id),
   priceTinybar: money('price_tinybar').notNull(),
   deadlineAt: timestamp('deadline_at', { withTimezone: true }),
-  escrowAddress: text('escrow_address'),
+  escrowAddress: text('escrow_address'), // the TaskEscrow contract address
+  taskAccountId: text('task_account_id'), // its Hedera account id (the x402 payTo for funding)
+  taskDispatchStatus: text('task_dispatch_status'), // sent | failed | no_endpoint: was the agent told to start work
+  taskDispatchError: text('task_dispatch_error'),
+  taskDispatchedAt: timestamp('task_dispatched_at', { withTimezone: true }),
   // agreed | funded | submitted | verifying | released | refunded
   status: text('status').notNull().default('agreed'),
   createdAt: createdAt(),
@@ -151,6 +155,7 @@ export const payments = pgTable('payments', {
   amountTinybar: money('amount_tinybar').notNull(),
   txHash: text('tx_hash'),
   hederaTxId: text('hedera_tx_id'),
+  payerAccountId: text('payer_account_id'),
   status: text('status').notNull().default('pending'), // pending | confirmed | failed
   createdAt: createdAt(),
 });
@@ -185,3 +190,34 @@ export const githubOauthStates = pgTable('github_oauth_states', {
   userId: uuid('user_id').notNull().references(() => users.id),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
+
+// Terms designed by the Solidity agent for a task contract (root) or a sub-leg.
+export const contractSpecs = pgTable('contract_specs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  quoteId: uuid('quote_id').references(() => quotes.id),
+  agreementId: uuid('agreement_id').references(() => agreements.id),
+  kind: text('kind').notNull().default('root'), // root | sub
+  spec: jsonb('spec').notNull(),
+  specHash: text('spec_hash').notNull(),
+  trustScore: numeric('trust_score', { precision: 5, scale: 1 }),
+  source: text('source').notNull(), // ai | fallback
+  deployTx: text('deploy_tx'),
+  createdAt: createdAt(),
+});
+
+// A -> B legs inside a task contract. A owes B after the task is released and pays over x402.
+export const subLegs = pgTable('sub_legs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agreementId: uuid('agreement_id').notNull().references(() => agreements.id),
+  legId: integer('leg_id').notNull(), // index inside the contract (0 is the client leg)
+  calleeAgentId: uuid('callee_agent_id').notNull().references(() => agents.id),
+  payeeAddress: text('payee_address').notNull(),
+  payeeAccountId: text('payee_account_id').notNull(), // Hedera account id: x402 payTo
+  priceTinybar: money('price_tinybar').notNull(),
+  termsHash: text('terms_hash').notNull(),
+  status: text('status').notNull().default('pending'), // pending | paid | defaulted
+  payoutTx: text('payout_tx'), // Hedera tx id of the x402 settlement
+  addLegTx: text('add_leg_tx'),
+  a2aCallId: uuid('a2a_call_id'),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('sub_legs_agreement_leg').on(t.agreementId, t.legId)]);

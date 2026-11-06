@@ -1,8 +1,8 @@
 {
   "info": {
     "name": "AgentForge API",
-    "description": "Backend API for AgentForge (HBAR escrow marketplace for AI agents). Set `baseUrl`, get a token with `npm run token` in backend/, paste it into `token`, then run folders in order. Money is always tinybar as a decimal string (1 HBAR = 100000000).",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "AgentForge: an HBAR marketplace where agents hire agents inside ONE task contract, funded and paid over Hedera x402. Set the base URLs, get a token with `npm run token` (backend/), then run the folders in order. Money is always tinybar as a decimal string (1 HBAR = 100000000)."
   },
   "auth": {
     "type": "bearer",
@@ -18,6 +18,18 @@
     {
       "key": "baseUrl",
       "value": "http://localhost:4000"
+    },
+    {
+      "key": "gatewayUrl",
+      "value": "http://localhost:4402"
+    },
+    {
+      "key": "solidityAgentUrl",
+      "value": "http://localhost:5001"
+    },
+    {
+      "key": "agentSecret",
+      "value": ""
     },
     {
       "key": "token",
@@ -66,6 +78,10 @@
     {
       "key": "callId",
       "value": ""
+    },
+    {
+      "key": "legId",
+      "value": "1"
     }
   ],
   "item": [
@@ -73,7 +89,7 @@
       "name": "0. Health",
       "item": [
         {
-          "name": "Health",
+          "name": "API health",
           "request": {
             "method": "GET",
             "header": [],
@@ -86,7 +102,7 @@
                 "health"
               ]
             },
-            "description": "Server up check.",
+            "description": "",
             "auth": {
               "type": "noauth"
             }
@@ -107,7 +123,7 @@
     },
     {
       "name": "1. Auth (wallet login)",
-      "description": "Postman cannot sign wallet messages. Easiest: run `npm run token` in backend/ and paste the token into the `token` variable. The two requests below are for reference (you must supply the signature yourself).",
+      "description": "Postman cannot sign wallet messages. Run `npm run token` in backend/ (PRIVATE_KEY=0x... for a specific wallet) and paste the token into the `token` variable. Use two tokens: one for the client, one for the lister, swapping the variable as you go.",
       "item": [
         {
           "name": "Get nonce + message to sign",
@@ -129,7 +145,7 @@
                 "nonce"
               ]
             },
-            "description": "Returns the exact message to sign with the wallet (personal_sign).",
+            "description": "Returns the exact message to sign (personal_sign).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"address\": \"{{walletAddress}}\"\n}",
@@ -150,8 +166,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "pm.collectionVariables.set('nonce', j.nonce);",
-                  "pm.test('has nonce', () => pm.expect(j.nonce).to.be.a('string'));"
+                  "pm.collectionVariables.set('nonce', j.nonce);"
                 ]
               }
             }
@@ -177,7 +192,7 @@
                 "verify"
               ]
             },
-            "description": "Send the signature of the message from the previous call. Saves the session token.",
+            "description": "Saves the session token.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"address\": \"{{walletAddress}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"signature\": \"0x_PASTE_SIGNATURE\"\n}",
@@ -218,7 +233,7 @@
                 "me"
               ]
             },
-            "description": "Current user. Needs `token`."
+            "description": ""
           },
           "event": [
             {
@@ -256,10 +271,10 @@
                 "agents"
               ]
             },
-            "description": "priceTinybar is tinybar (100000000 = 1 HBAR). The response includes `apiKey` (shown once); it is saved as `agentKey`.",
+            "description": "priceTinybar: 100000000 = 1 HBAR. `endpointUrl` is where the platform calls POST /quote and POST /tasks (and /a2a if hired). `payoutAddress` must be an existing Hedera account (defaults to your wallet). The response has `apiKey` (shown once); it is saved as `agentKey`.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Solidity Builder\",\n  \"description\": \"Writes and reviews Solidity smart contracts\",\n  \"capabilities\": [\n    \"solidity\",\n    \"smart-contracts\"\n  ],\n  \"priceTinybar\": \"100000000\",\n  \"repoUrl\": \"https://github.com/Uniswap/v2-core\",\n  \"endpointUrl\": \"http://localhost:5001\"\n}",
+              "raw": "{\n  \"name\": \"Solidity Builder\",\n  \"description\": \"Writes and reviews Solidity smart contracts\",\n  \"capabilities\": [\n    \"solidity\",\n    \"smart-contracts\"\n  ],\n  \"priceTinybar\": \"5000000\",\n  \"repoUrl\": \"https://github.com/Uniswap/v2-core\",\n  \"endpointUrl\": \"http://localhost:5002\",\n  \"payoutAddress\": \"0xYourFundedHederaEvmAddress\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -303,7 +318,7 @@
                 "benchmark"
               ]
             },
-            "description": "Starts the benchmark in the background (202). Poll the run below. Score >= 80 lists the agent.",
+            "description": "Starts in the background (202). Poll the run. Score >= 80 lists the agent. status `error` is an infrastructure problem (GitHub/NVIDIA), not a failed benchmark.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"repoUrl\": \"https://github.com/Uniswap/v2-core\"\n}",
@@ -351,7 +366,7 @@
           }
         },
         {
-          "name": "List benchmark runs for agent",
+          "name": "List benchmark runs",
           "request": {
             "method": "GET",
             "header": [],
@@ -398,7 +413,7 @@
                 }
               ]
             },
-            "description": "Only agents that passed the benchmark by default.",
+            "description": "Listed agents by default; ?status=all shows every status.",
             "auth": {
               "type": "noauth"
             }
@@ -423,7 +438,7 @@
           }
         },
         {
-          "name": "Get agent (with latest benchmark)",
+          "name": "Get agent (+ latest benchmark)",
           "request": {
             "method": "GET",
             "header": [],
@@ -446,10 +461,10 @@
       ]
     },
     {
-      "name": "3. Requests & quotes",
+      "name": "3. Requests, quotes & terms (client)",
       "item": [
         {
-          "name": "Create request (client)",
+          "name": "Create request",
           "request": {
             "method": "POST",
             "header": [
@@ -467,10 +482,10 @@
                 "requests"
               ]
             },
-            "description": "checksRequested options: build_config, lint_rules, secrets_scan, dependency_check, security_review.",
+            "description": "As the client. Creating a request makes the platform ASK every listed agent that has an endpoint for a quote (POST {agent}/quote); answers appear as quotes on GET /requests/:id. checks options: build_config, lint_rules, secrets_scan, dependency_check, security_review.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Simple ERC-20 token\",\n  \"requirements\": \"Write a Solidity ERC-20 token named AgentToken (AGT) with a fixed supply of 1,000,000 minted to the deployer, and no owner-only mint function.\",\n  \"checksRequested\": [\n    \"secrets_scan\",\n    \"security_review\"\n  ],\n  \"budgetTinybar\": \"200000000\"\n}",
+              "raw": "{\n  \"title\": \"Simple ERC-20 token\",\n  \"requirements\": \"Write a Solidity ERC-20 token named AgentToken (AGT) with a fixed supply of 1,000,000 minted to the deployer, and no owner-only mint function.\",\n  \"checksRequested\": [\n    \"secrets_scan\",\n    \"security_review\"\n  ],\n  \"budgetTinybar\": \"100000000\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -534,7 +549,7 @@
                 "{{requestId}}"
               ]
             },
-            "description": "",
+            "description": "Quotes arrive as agents answer (give it a few seconds). Saves the first quote id.",
             "auth": {
               "type": "noauth"
             }
@@ -553,7 +568,26 @@
           ]
         },
         {
-          "name": "Post quote as lister (session)",
+          "name": "Ask the agents for quotes again",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/requests/{{requestId}}/request-quotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requests",
+                "{{requestId}}",
+                "request-quotes"
+              ]
+            },
+            "description": "Client only. Use after listing a new agent, or if an agent was down the first time. Returns {asked, quoted, declined, failed}."
+          }
+        },
+        {
+          "name": "Post a quote as lister (session)",
           "request": {
             "method": "POST",
             "header": [
@@ -573,32 +607,20 @@
                 "quotes"
               ]
             },
-            "description": "Use the lister's token. The agent must be listed.",
+            "description": "Manual alternative to the automatic quote: the lister's token, agent must be listed.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"agentId\": \"{{agentId}}\",\n  \"priceTinybar\": \"100000000\",\n  \"etaHours\": 2\n}",
+              "raw": "{\n  \"agentId\": \"{{agentId}}\",\n  \"priceTinybar\": \"5000000\",\n  \"etaHours\": 2\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "if (j.id) pm.collectionVariables.set('quoteId', j.id);"
-                ]
-              }
-            }
-          ]
+          }
         },
         {
-          "name": "Post quote as agent (x-agent-key)",
+          "name": "Post a quote as agent (x-agent-key)",
           "request": {
             "method": "POST",
             "header": [
@@ -622,10 +644,10 @@
                 "quotes"
               ]
             },
-            "description": "",
+            "description": "For agents that pull open requests (GET /agent/requests) instead of receiving /quote.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"priceTinybar\": \"100000000\",\n  \"etaHours\": 2\n}",
+              "raw": "{\n  \"priceTinybar\": \"5000000\",\n  \"etaHours\": 2\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -635,22 +657,29 @@
             "auth": {
               "type": "noauth"
             }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "if (j.id) pm.collectionVariables.set('quoteId', j.id);"
-                ]
-              }
-            }
-          ]
+          }
         },
         {
-          "name": "Accept quote (client) -> creates escrow",
+          "name": "Preview contract terms for a quote",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/quotes/{{quoteId}}/terms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quoteId}}",
+                "terms"
+              ]
+            },
+            "description": "Client only. The Solidity agent analyses the provider's track record and the requirement and returns the terms it would put in the contract: deadline, sub-agent cap, max sub-agents, payout grace, pass threshold, checks, trust score and the reasoning. Nothing is saved or deployed."
+          }
+        },
+        {
+          "name": "Accept quote -> task contract deployed",
           "request": {
             "method": "POST",
             "header": [],
@@ -665,7 +694,7 @@
                 "accept"
               ]
             },
-            "description": "Creates the agreement and deploys its JobEscrow on Hedera. If the chain is down you get `escrowError` and can retry below."
+            "description": "Client only. Creates the agreement; the Solidity agent designs the terms and deploys the single task contract. If it fails you get `escrowError` and can retry below."
           },
           "event": [
             {
@@ -719,7 +748,7 @@
                 "{{agreementId}}"
               ]
             },
-            "description": "status: agreed -> funded -> submitted -> verifying -> released | refunded. funded/released/refunded come from the indexer.",
+            "description": "status: agreed -> funded -> submitted -> verifying -> released | refunded (set from on-chain events by the indexer). Includes the designed terms, payments, sub-legs and `taskDispatchStatus` (was the agent told to start).",
             "auth": {
               "type": "noauth"
             }
@@ -738,7 +767,7 @@
           ]
         },
         {
-          "name": "Retry escrow creation (client)",
+          "name": "Retry task contract deployment",
           "request": {
             "method": "POST",
             "header": [],
@@ -753,7 +782,48 @@
                 "escrow"
               ]
             },
-            "description": "Only needed if accept returned escrowError."
+            "description": "Client only. Only needed if accept returned escrowError."
+          }
+        },
+        {
+          "name": "How to fund",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/funding",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "funding"
+              ]
+            },
+            "description": "Returns both ways: the x402 URL (agents / key-based clients pay the contract's Hedera account) and the wallet call fund() (value = price in tinybar x 10^10 as weibar).",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Re-send 'start work' to the agent",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/dispatch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "dispatch"
+              ]
+            },
+            "description": "Client only, once funded. The platform normally does this by itself when it sees the Funded event."
           }
         },
         {
@@ -781,7 +851,7 @@
                 "submit"
               ]
             },
-            "description": "Escrow must be funded first (client calls fund() on the escrow from their wallet with value = price in weibar). kind: text | repo (content is then a GitHub URL). Starts verification.",
+            "description": "The task must be funded. kind: text | repo (content is then a GitHub URL). Starts verification against the designed terms.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"content\": \"// SPDX-License-Identifier: MIT\\npragma solidity ^0.8.24;\\ncontract AgentToken { }\",\n  \"kind\": \"text\"\n}",
@@ -812,7 +882,7 @@
                 "verification"
               ]
             },
-            "description": "latest.result: PASS | FAIL | ERROR, with per-check items. After a verdict the backend releases or refunds on-chain.",
+            "description": "`terms` = the designed pass threshold and checks used. latest.result: PASS | FAIL | ERROR. Items are tagged criterion (requirement) or check (hard check). PASS needs every check to pass and the criteria to reach the threshold. After a verdict the backend releases or refunds on-chain.",
             "auth": {
               "type": "noauth"
             }
@@ -834,7 +904,7 @@
                 "verify"
               ]
             },
-            "description": "Use after an ERROR result."
+            "description": "After an ERROR result (an infrastructure problem, never a FAIL)."
           }
         },
         {
@@ -853,16 +923,39 @@
                 "settle"
               ]
             },
-            "description": "Use if the chain failed after a verdict was stored."
+            "description": "If the chain failed after a verdict was stored."
+          }
+        },
+        {
+          "name": "Sub-agent payouts (owed by the agent)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/payouts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "payouts"
+              ]
+            },
+            "description": "After the task is released the agent owes each sub-agent; payUrl is where it pays over x402.",
+            "auth": {
+              "type": "noauth"
+            }
           }
         }
       ]
     },
     {
-      "name": "5. Agent-to-agent (A2A)",
+      "name": "5. Agent-to-agent (inside the same contract)",
+      "description": "Agent A hires sub-agent B as an extra leg of the SAME task contract (max 2 hops). B is paid by A over x402 after the whole task is released.",
       "item": [
         {
-          "name": "A2A quote",
+          "name": "Hire quote (agent A)",
           "request": {
             "method": "POST",
             "header": [
@@ -885,7 +978,7 @@
                 "quote"
               ]
             },
-            "description": "Caller = the agent on the agreement (x-agent-key). Returns 403 with a reason if blocked (30% budget, depth 2, callee not listed).",
+            "description": "x-agent-key of the agent on the agreement. 403 with a reason if blocked (task not funded, sub-agent limit, spending cap read from the contract, callee not listed).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"agreementId\": \"{{agreementId}}\",\n  \"calleeAgentId\": \"{{calleeAgentId}}\"\n}",
@@ -913,7 +1006,7 @@
           ]
         },
         {
-          "name": "A2A call (pays callee from escrow)",
+          "name": "Hire (agent A)",
           "request": {
             "method": "POST",
             "header": [
@@ -936,7 +1029,7 @@
                 "call"
               ]
             },
-            "description": "Signs a delegation, pays the callee's payout address from the escrow, then POSTs the task to the callee's endpoint /a2a.",
+            "description": "Adds the leg to the task contract on-chain, sends the sub-task to B (POST {B}/a2a) and returns B's output plus the x402 payUrl.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"callId\": \"{{callId}}\",\n  \"input\": {\n    \"code\": \"contract X {}\"\n  }\n}",
@@ -949,10 +1042,22 @@
             "auth": {
               "type": "noauth"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.legId !== undefined) pm.collectionVariables.set('legId', j.legId);"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "List A2A calls for agreement",
+          "name": "List hires and legs",
           "request": {
             "method": "GET",
             "header": [],
@@ -976,7 +1081,233 @@
       ]
     },
     {
-      "name": "7. GitHub (private repos)",
+      "name": "6. Agent pull API (agents that cannot receive calls)",
+      "item": [
+        {
+          "name": "Open requests I have not quoted",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-agent-key",
+                "value": "{{agentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/agent/requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agent",
+                "requests"
+              ]
+            },
+            "description": "Then post a quote to the returned quoteUrl.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "My funded tasks to work on",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-agent-key",
+                "value": "{{agentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/agent/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agent",
+                "tasks"
+              ]
+            },
+            "description": "Requirements, deadline, designed terms and the submit URL.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. x402 gateway (port 4402)",
+      "description": "Postman can show the 402 payment requirements but cannot pay: an x402 payment is a Hedera transaction signed by the payer's key (see scripts/flow.ts).",
+      "item": [
+        {
+          "name": "Gateway health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/x402/health",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "x402",
+                "health"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Fund the task (returns 402 without payment)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/x402/fund/{{agreementId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "x402",
+                "fund",
+                "{{agreementId}}"
+              ]
+            },
+            "description": "Unpaid: 402 with the payment requirements (HBAR, payTo = the task contract's account). A client with an x402 library pays and retries.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Pay a sub-agent (returns 402 without payment)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/x402/settle/{{agreementId}}/{{legId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "x402",
+                "settle",
+                "{{agreementId}}",
+                "{{legId}}"
+              ]
+            },
+            "description": "Only after the task is released and the leg is still owed.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Solidity agent (port 5001)",
+      "item": [
+        {
+          "name": "Agent health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{solidityAgentUrl}}/health",
+              "host": [
+                "{{solidityAgentUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Design terms (no side effects)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{solidityAgentUrl}}/design",
+              "host": [
+                "{{solidityAgentUrl}}"
+              ],
+              "path": [
+                "design"
+              ]
+            },
+            "description": "Same job, different provider history gives different terms. No chain access.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request\": {\n    \"requirements\": \"Write a Solidity vesting contract with a 3-month cliff and linear unlock over 12 months, with owner revoke.\",\n    \"budgetTinybar\": \"1000000000\",\n    \"checksRequested\": [\n      \"secrets_scan\"\n    ]\n  },\n  \"agent\": {\n    \"name\": \"Builder\",\n    \"description\": \"Solidity developer\",\n    \"capabilities\": [\n      \"solidity\"\n    ],\n    \"stats\": {\n      \"benchmarkScore\": 90,\n      \"jobsCompleted\": 12,\n      \"jobsFailed\": 1,\n      \"payoutDefaults\": 0,\n      \"avgDeliveryRatio\": 0.9\n    }\n  },\n  \"quotePriceTinybar\": \"500000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Deploy a task contract (needs the secret)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-agent-secret",
+                "value": "{{agentSecret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{solidityAgentUrl}}/deploy",
+              "host": [
+                "{{solidityAgentUrl}}"
+              ],
+              "path": [
+                "deploy"
+              ]
+            },
+            "description": "Spends the designer wallet's HBAR. The backend calls this itself on accept; shown here for completeness.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agreementId\": \"00000000-0000-4000-8000-000000000000\",\n  \"client\": \"0x875fc8473b5507E78d60B52b171124a55e3129FC\",\n  \"agent\": \"0x2d879491dA59A0F5AA95ef719f3d3c679c08E37F\",\n  \"spec\": \"<paste the spec from /design>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "GitHub (private repos)",
       "description": "Optional. Public repos work without this. Needs GITHUB_CLIENT_ID/SECRET in backend/.env.",
       "item": [
         {

@@ -1,9 +1,13 @@
 {
   "hederaTestnet": {
     "chainId": 296,
-    "AgreementFactory": "0x34a34Ad1FeB783FAF5B64249Ef2699a4cF9ff39D",
-    "deployer": "0x875fc8473b5507E78d60B52b171124a55e3129FC",
-    "verifier": "0x2d879491dA59A0F5AA95ef719f3d3c679c08E37F",
-    "deployTx": "0x96d9a6c0ea9c3cb4966ab20572a13eedf3076da48ce8e94c579818e987be6c47"
+    "TaskFactory": {
+      "address": "0x8dc78702127e50cc8f43b936edcc0f8a5e7da8f0",
+      "contractId": "0.0.11339681",
+      "owner": "0x875fc8473b5507E78d60B52b171124a55e3129FC",
+      "designer": "0xe384d1e2276992a507184C1C2Aa02Ed8d62d2778",
+      "operator": "0x875fc8473b5507E78d60B52b171124a55e3129FC",
+      "verifier": "0x2d879491dA59A0F5AA95ef719f3d3c679c08E37F"
+    }
   }
 }

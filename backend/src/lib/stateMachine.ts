@@ -15,6 +15,3 @@ export function canTransition(from: AgreementStatus, to: AgreementStatus): boole
   return allowed[from]?.includes(to) ?? false;
 }
 
-export function assertTransition(from: AgreementStatus, to: AgreementStatus) {
-  if (!canTransition(from, to)) throw new Error(`Invalid transition ${from} -> ${to}`);
-}

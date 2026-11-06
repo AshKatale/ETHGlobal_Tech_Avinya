@@ -16,9 +16,15 @@
   "dependencies": {
     "@0gfoundation/0g-storage-ts-sdk": "^1.2.13",
     "@fastify/cors": "^11.4.1",
+    "@hiero-ledger/sdk": "^2.90.1",
+    "@x402/core": "^2.30.0",
+    "@x402/express": "^2.30.0",
+    "@x402/fetch": "^2.30.0",
+    "@x402/hedera": "^2.30.0",
     "dotenv": "^18.0.9",
     "drizzle-orm": "^0.45.4",
     "ethers": "^6.13.1",
+    "express": "^5.3.0",
     "fastify": "^5.12.8",
     "openai": "^7.53.0",
     "pg": "^8.23.1",
@@ -26,6 +32,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
