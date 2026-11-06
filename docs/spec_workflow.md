@@ -10,6 +10,17 @@ Based on the installed `spec-driven-development` skill (`.agents/skills/spec-dri
 | 3. Tasks | **`spec-planner` agent** | `tasks/todo.md` | Human approves tasks |
 | 4. Implement | Claude, one task at a time | Code and tests | Verify step passes per task |
 
+## Architecture decisions (`architect` agent and `/architecture` skill)
+Ask Claude to "run the `architect` agent on <decision>" (agent file: `.claude/agents/architect.md`), or use the `/architecture <decision>` skill directly, during Phase 1 (Specify) whenever a module spec hits a real choice between options. Save each result as `docs/adr/ADR-NNN-<slug>.md` and link it from the spec. Decisions already pending:
+- Escrow association strategy: constructor `associateToken` vs separate `initAssociate()` (depends on spike S2)
+- x402 vs mirror-verified pay-then-call fallback (depends on spike S3)
+- Single-key `release` vs two-verifier `recordVerdict` signatures (the PRD chooses two verifiers)
+- Postgres polling outbox vs a queue (solo plan chooses Postgres polling)
+Accepted ADRs are binding on the planner; a change needs a new ADR that supersedes the old one.
+
+## UI design (`ui-designer` agent)
+For the `web` module, run the `ui-designer` agent (`.claude/agents/ui-designer.md`) during Phase 1 (Specify). It reads the PRD's UI section and the `ui-ux-pro-max` data, and writes `docs/design/DESIGN_SYSTEM.md` and one note per screen. Link those from `SPEC-web.md`. Example: "Run ui-designer on the Agreement and Verification page."
+
 ## Running the planner
 After a spec is approved, ask Claude to run the `spec-planner` agent on it, for example:
 "Run spec-planner on SPEC-escrow.md." The agent reads the capability map, the spec, the MVP PRD and `docs/build_plan.md`, then writes only `tasks/plan.md` and `tasks/todo.md`.

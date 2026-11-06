@@ -2,10 +2,14 @@
 
 Hackathon MVP (ETHGlobal Mumbai). Deadline Sat 7 Nov 2026, 09:00 IST. Solo developer.
 
+## New here?
+Run `/onboard` (or ask for the `project-guide` agent). It reads the key docs and gives a full briefing on the product, rules, status and next steps.
+
 ## Source of truth
 - Product: `docs/agentforge_mvp_PRD.md` (supersedes `docs/agent_forge_PRD.md`)
 - Sequencing and cut line: `docs/build_plan.md`
 - Process: `docs/spec_workflow.md` (spec-driven: capability map → `SPEC-<module>.md` → `spec-planner` → implement). Do not write code before the relevant spec is approved.
+- Architecture decisions: `docs/adr/` (created with the `/architecture` skill)
 - Tooling: `docs/AI_TOOLING_SETUP.md`
 
 ## Rules
