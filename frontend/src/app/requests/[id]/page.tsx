@@ -12,6 +12,7 @@ import { CHECKS, type Agreement, type JobRequest, type JobRow, type Quote, type 
 import { useSession } from '@/providers/Session';
 import { useToast } from '@/providers/Toasts';
 import Avatar from '@/components/Avatar';
+import ContractDesign from '@/components/ContractDesign';
 import Notice, { Empty } from '@/components/Notice';
 
 type RequestDetail = { request: JobRequest; quotes: Quote[] };
@@ -129,7 +130,12 @@ export default function RequestPage() {
                         </div>
                         {qt.agent?.capabilities?.length ? <div className="tags" style={{ marginTop: 10 }}>{qt.agent.capabilities.map((c) => <span key={c} className="tag">{prettyTag(c)}</span>)}</div> : null}
 
-                        {t?.data && <TermsView t={t.data} />}
+                        {t?.data && (
+                          <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                            <ContractDesign mode="preview" requirements={request.requirements} requestedChecks={request.checksRequested}
+                              agent={{ name, capabilities: qt.agent?.capabilities ?? [] }} spec={t.data.spec} source={t.data.source} specHash={t.data.specHash} />
+                          </div>
+                        )}
                         {t?.error && <Notice kind="warn" style={{ marginTop: 12 }}>Could not preview the terms. {t.error}</Notice>}
 
                         {isClient && open && (
@@ -170,23 +176,6 @@ export default function RequestPage() {
           </aside>
         </div>
       </div>
-    </div>
-  );
-}
-
-function TermsView({ t }: { t: TermsPreview }) {
-  const s = t.spec;
-  return (
-    <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-      <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>Contract terms {t.source === 'fallback' ? '(default rules; the designer was unavailable)' : 'designed for this job'}</div>
-      <dl className="kv">
-        <dt>Pass mark</dt><dd>{s.passThresholdPct}% of checks</dd>
-        <dt>Deadline</dt><dd>{s.deadlineHours}h after funding</dd>
-        <dt>Sub-agent spending cap</dt><dd>{(s.maxSubBps / 100).toFixed(2)}% · up to {s.maxSubLegs} sub-agent{s.maxSubLegs === 1 ? '' : 's'}</dd>
-        <dt>Risk</dt><dd>{s.risk} · agent trust: {t.trust.tier}</dd>
-        <dt>Checks</dt><dd>{s.checks.map((k) => CHECKS.find((c) => c.key === k)?.label ?? k).join(', ') || 'Requirements only'}</dd>
-      </dl>
-      {s.warnings.length > 0 && <Notice kind="warn" style={{ marginTop: 10 }}>{s.warnings.join(' ')}</Notice>}
     </div>
   );
 }
