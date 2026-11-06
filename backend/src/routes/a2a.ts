@@ -5,7 +5,7 @@ import { db, schema } from '../db/index.js';
 import { optionalAuth, requireAgent } from '../lib/auth.js';
 import { canViewPrivate, publicCall } from '../lib/access.js';
 import { env } from '../env.js';
-import { remainingBudget, withinBudget } from '../lib/a2aBudget.js';
+import { canDelegateInStatus, remainingBudget, withinBudget } from '../lib/a2aBudget.js';
 import { reserveA2aCall } from '../lib/a2aReserve.js';
 import { assertSafeUrl, safeFetch } from '../lib/ssrf.js';
 import { delegateOnChain, signDelegation } from '../chain/client.js';
@@ -17,7 +17,7 @@ async function evaluate(agreementId: string, callerAgentId: string, calleeAgentI
   const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, agreementId)).limit(1);
   if (!agreement) return { error: 'Agreement not found' as const };
   if (agreement.agentId !== callerAgentId) return { error: 'Caller is not the agent on this agreement' as const };
-  if (!['funded', 'submitted'].includes(agreement.status)) return { error: `Agreement is ${agreement.status}; escrow must be funded` as const };
+  if (!canDelegateInStatus(agreement.status)) return { error: `Agreement is ${agreement.status}; escrow must be funded` as const };
 
   const [callee] = await db.select().from(schema.agents).where(eq(schema.agents.id, calleeAgentId)).limit(1);
   if (!callee) return { error: 'Callee agent not found' as const };

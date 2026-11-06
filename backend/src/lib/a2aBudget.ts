@@ -14,3 +14,6 @@ export function remainingBudget(args: { jobPrice: bigint; alreadySpent: bigint; 
   const cap = (args.jobPrice * percentToBps(args.maxPercent)) / 10_000n;
   return cap > args.alreadySpent ? cap - args.alreadySpent : 0n;
 }
+
+/** V2 escrows allow delegate only in Funded (not after submit), so the backend refuses A2A spend in any other status. */
+export const canDelegateInStatus = (status: string) => status === 'funded';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { remainingBudget, withinBudget } from './a2aBudget.js';
+import { canDelegateInStatus, remainingBudget, withinBudget } from './a2aBudget.js';
 
 describe('a2a budget', () => {
   const jobPrice = 1_000_000_000n; // 10 HBAR
@@ -11,5 +11,9 @@ describe('a2a budget', () => {
   it('computes remaining budget', () => {
     expect(remainingBudget({ jobPrice, alreadySpent: 100_000_000n, maxPercent: 30 })).toBe(200_000_000n);
     expect(remainingBudget({ jobPrice, alreadySpent: 400_000_000n, maxPercent: 30 })).toBe(0n);
+  });
+  it('delegates only while funded (V2 rule)', () => {
+    expect(canDelegateInStatus('funded')).toBe(true);
+    for (const s of ['agreed', 'submitted', 'verifying', 'released', 'refunded']) expect(canDelegateInStatus(s), s).toBe(false);
   });
 });

@@ -182,3 +182,26 @@ describe.skipIf(!HAS_DB)('S-06 single-flight settle', () => {
     await app.close();
   });
 });
+
+describe.skipIf(!HAS_DB)('A2A only while funded', () => {
+  it('quote and reserve are refused once the agreement is submitted', async () => {
+    const { reserveA2aCall } = await import('./lib/a2aReserve.js');
+    const app = await buildServer();
+    const u = await fx.user();
+    const caller = await fx.agent(u.id);
+    const callee = await fx.agent(u.id, { status: 'listed', priceTinybar: '100' });
+    const agreement = await fx.agreement(u.id, caller.id, { price: '1000', status: 'submitted' });
+
+    const q = await app.inject({ method: 'POST', url: '/a2a/quote', headers: { 'x-agent-key': caller.key }, payload: { agreementId: agreement.id, calleeAgentId: callee.id } });
+    expect(q.statusCode).toBe(400);
+    expect(q.json().error).toMatch(/must be funded/);
+
+    const [c] = await db.insert(schema.a2aCalls).values({ agreementId: agreement.id, callerAgentId: caller.id, calleeAgentId: callee.id, priceTinybar: '100', status: 'quoted' }).returning();
+    expect(await reserveA2aCall(c.id, caller.id, 30)).toMatchObject({ ok: false, code: 409 });
+
+    const funded = await fx.agreement(u.id, caller.id, { price: '1000', status: 'funded' });
+    const ok = await app.inject({ method: 'POST', url: '/a2a/quote', headers: { 'x-agent-key': caller.key }, payload: { agreementId: funded.id, calleeAgentId: callee.id } });
+    expect(ok.statusCode).toBe(200);
+    await app.close();
+  });
+});

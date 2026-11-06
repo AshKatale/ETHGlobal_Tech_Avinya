@@ -2,7 +2,7 @@
 // transaction behind a per-agreement advisory lock, so two simultaneous calls cannot overspend the cap.
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db as defaultDb, schema } from '../db/index.js';
-import { withinBudget } from './a2aBudget.js';
+import { canDelegateInStatus, withinBudget } from './a2aBudget.js';
 
 export type Reservation =
   | { ok: true; call: typeof schema.a2aCalls.$inferSelect }
@@ -27,7 +27,7 @@ export async function reserveA2aCall(
 
     const [agreement] = await tx.select().from(schema.agreements).where(eq(schema.agreements.id, call.agreementId)).limit(1);
     if (!agreement) return { ok: false, code: 404, error: 'Agreement not found' };
-    if (!['funded', 'submitted'].includes(agreement.status)) return { ok: false, code: 409, error: `Agreement is ${agreement.status}; escrow must be funded` };
+    if (!canDelegateInStatus(agreement.status)) return { ok: false, code: 409, error: `Agreement is ${agreement.status}; escrow must be funded` };
 
     const spentRows = await tx
       .select({ price: schema.a2aCalls.priceTinybar })
