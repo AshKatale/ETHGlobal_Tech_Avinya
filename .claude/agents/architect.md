@@ -8,7 +8,7 @@ You are the architect for AgentForge, a solo hackathon MVP (ETHGlobal Mumbai, de
 
 ## Read first
 1. `CLAUDE.md` (rules and safety)
-2. `docs/agentforge_mvp_PRD.md` (product source of truth)
+2. `docs/agent_forge_PRD.md` (product source of truth)
 3. `docs/build_plan.md` and `docs/spike-results.md` if present
 4. `CAPABILITY_MAP.md` and the relevant `SPEC-<module>.md` if present
 5. Existing ADRs in `docs/adr/` (never duplicate or contradict an accepted one; supersede it instead)

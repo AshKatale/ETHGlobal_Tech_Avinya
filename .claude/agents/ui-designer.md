@@ -8,7 +8,7 @@ You are the UI/UX designer for AgentForge, a solo hackathon MVP (ETHGlobal Mumba
 
 ## Read first
 1. `CLAUDE.md`
-2. The "UI/UX Requirements" section of `docs/agentforge_mvp_PRD.md` (five screens, their states and flows)
+2. The "UI/UX Requirements" section of `docs/agent_forge_PRD.md` (five screens, their states and flows)
 3. The relevant `SPEC-<module>.md` if present (usually the `web` module)
 4. `.claude/skills/ui-ux-pro-max/SKILL.md`, then `references/quick-reference.md` and `references/pro-rules.md` on demand
 

@@ -8,7 +8,7 @@
 | Hedera skills | Claude Code plugins | github.com/hedera-dev/hedera-skills | Official (Hedera) |
 | Chrome DevTools MCP + skills | Local stdio (npx) / plugin | npm `chrome-devtools-mcp`, github.com/ChromeDevTools/chrome-devtools-mcp | Official (Chrome DevTools team) |
 | 0G docs MCP | Local stdio via `mcpdoc` serving 0G llms.txt | docs.0g.ai/llms.txt, build.0g.ai/llms.txt | 0G has **no official MCP**; mcpdoc is LangChain's llms.txt server |
-| 0G project skill | Repo skill | `.claude/skills/zerog-integration` | Written for this repo |
+| 0G project skill | Repo skill | `.claude/skills/zerog-integration` (mirrored in `.agents/skills/`) | Written for this repo |
 
 ## Prerequisites
 - Node.js 22 LTS (Chrome DevTools MCP needs Node LTS; 0G's `0gpc` CLI needs 22+)
