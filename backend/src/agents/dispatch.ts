@@ -8,8 +8,14 @@ import { db, schema } from '../db/index.js';
 import { env } from '../env.js';
 
 const MAX_AGENTS_ASKED = 10;
+/** Headers for platform -> agent calls. Agents that set BACKEND_SECRET only accept calls that carry it. */
+export const agentHeaders = (): Record<string, string> => ({
+  'content-type': 'application/json',
+  ...(env.BACKEND_SECRET ? { 'x-backend-secret': env.BACKEND_SECRET } : {}),
+});
+
 const post = (url: string, body: unknown) =>
-  fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
+  fetch(url, { method: 'POST', headers: agentHeaders(), body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
 
 // ---------------- quotes ----------------
 /** What an agent answers to /quote: a price, or a refusal. */
@@ -76,6 +82,7 @@ export async function buildTaskPayload(agreementId: string) {
     priceTinybar: String(agreement.priceTinybar),
     deadlineAt: agreement.deadlineAt,
     taskContract: agreement.escrowAddress,
+    checks: spec?.checks ?? request.checksRequested, // the designed checks (a superset of what the client ticked)
     terms: spec ? { deadlineHours: spec.deadlineHours, maxSubBps: spec.maxSubBps, maxSubLegs: spec.maxSubLegs, passThresholdPct: spec.passThresholdPct, checks: spec.checks } : null,
     submitUrl: `${env.API_PUBLIC_URL}/agreements/${agreementId}/submit`,
     hireUrl: `${env.API_PUBLIC_URL}/a2a/quote`,

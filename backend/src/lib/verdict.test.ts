@@ -42,3 +42,13 @@ describe('agent quote replies', () => {
     expect(() => quoteReplySchema.parse({ etaHours: 0 })).toThrow();
   });
 });
+
+import { agentHeaders } from '../agents/dispatch.js';
+import { env } from '../env.js';
+describe('platform -> agent calls', () => {
+  it('send the backend secret only when one is configured', () => {
+    const h = agentHeaders();
+    expect(h['content-type']).toBe('application/json');
+    expect('x-backend-secret' in h).toBe(Boolean(env.BACKEND_SECRET));
+  });
+});

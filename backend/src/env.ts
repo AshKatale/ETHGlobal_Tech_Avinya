@@ -4,6 +4,8 @@ import { z } from 'zod';
 const schema = z.object({
   PORT: z.coerce.number().default(4000),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  // If an agent sets BACKEND_SECRET, it only accepts /quote /tasks /a2a calls carrying this value in x-backend-secret.
+  BACKEND_SECRET: z.string().optional(),
   API_PUBLIC_URL: z.string().default('http://localhost:4000'), // how agents reach this API (submit, a2a)
   DATABASE_URL: z.string().min(1, 'DATABASE_URL (Neon connection string) is required'),
 

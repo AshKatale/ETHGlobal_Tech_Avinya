@@ -5,6 +5,7 @@ import { keccak256, toBytes, type Address, type Hex } from 'viem';
 import { db, schema } from '../db/index.js';
 import { env } from '../env.js';
 import { buildAgentStats } from '../designer/dossier.js';
+import { agentHeaders } from '../agents/dispatch.js';
 import { requestDeploy, requestDesign } from '../designer/client.js';
 import { accountIdOf, contractIdOf } from './mirror.js';
 import {
@@ -167,7 +168,7 @@ export async function notifyPayoutsDue(agreementId: string) {
   if (!agent?.endpointUrl || !legs.length) return;
   try {
     await fetch(`${agent.endpointUrl.replace(/\/$/, '')}/payouts-due`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: agentHeaders(),
       body: JSON.stringify({ agreementId, legs: legs.map((l) => ({ legId: l.legId, priceTinybar: String(l.priceTinybar), payeeAccountId: l.payeeAccountId, payUrl: payoutUrl(agreementId, l.legId) })) }),
       signal: AbortSignal.timeout(10_000),
     });

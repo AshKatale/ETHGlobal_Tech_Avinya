@@ -7,6 +7,7 @@ import { db, schema } from '../db/index.js';
 import { requireAgent } from '../lib/auth.js';
 import { createSubLeg, payoutUrl } from '../chain/ops.js';
 import { readTaskTerms } from '../chain/client.js';
+import { agentHeaders } from '../agents/dispatch.js';
 import type { Address } from 'viem';
 
 /** Why a hire is not allowed right now, or null. Mirrors the contract's own checks so the reason is readable. */
@@ -76,7 +77,7 @@ export async function a2aRoutes(app: FastifyInstance) {
 
     try {
       const res = await fetch(`${r.callee.endpointUrl.replace(/\/$/, '')}/a2a`, {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: agentHeaders(),
         body: JSON.stringify({ agreementId: call.agreementId, callId: call.id, legId: leg.legId, input: body.input }),
         signal: AbortSignal.timeout(90_000),
       });
