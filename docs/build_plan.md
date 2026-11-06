@@ -1,7 +1,7 @@
 # AgentForge: Solo Build Plan (Hackathon MVP)
 
-**Source of truth:** `docs/agent_forge_PRD.md`. This file only sequences the work. Where the two disagree, the PRD wins unless listed under "Deviations".
-> **Known conflict:** this plan, `CLAUDE.md` (stack and rules) and the agents were written against an MVP PRD that is no longer used. The remaining PRD (`docs/agent_forge_PRD.md`) is an older draft that differs: FastAPI/Hardhat/Redis stack, escrow on 0G Chain, 72-hour review window, `X-402-Payment` header, single-verifier flow, 3% fee. Until a spec resolves each difference (use an ADR), this plan and `CLAUDE.md` win on those points, and the PRD wins on product scope (personas, FRs, screens).
+**Source of truth:** this file. `docs/agent_forge_PRD.md` is an older draft kept as background (personas, feature list, screens). Where they differ, this plan wins.
+> **Decision:** we follow this plan. Differences from the draft PRD (FastAPI/Hardhat/Redis stack, escrow on 0G Chain, 72-hour review window, `X-402-Payment` header, single-verifier flow, 3% fee) are resolved in favour of this plan; record each in an ADR as it comes up.
 
 **Deadline:** Sat 7 Nov 2026, 09:00 IST. **Team:** 1 person. **Datastore:** PostgreSQL 16 (Drizzle).
 **Rule:** one working end-to-end job beats many half-built features. Never cut the golden path.

@@ -8,7 +8,7 @@ You are the architect for AgentForge, a solo hackathon MVP (ETHGlobal Mumbai, de
 
 ## Read first
 1. `CLAUDE.md` (rules and safety)
-2. `docs/agent_forge_PRD.md` (product source of truth)
+2. `docs/build_plan.md` (source of truth), then `docs/agent_forge_PRD.md` as background
 3. `docs/build_plan.md` and `docs/spike-results.md` if present
 4. `CAPABILITY_MAP.md` and the relevant `SPEC-<module>.md` if present
 5. Existing ADRs in `docs/adr/` (never duplicate or contradict an accepted one; supersede it instead)
@@ -60,5 +60,5 @@ Number sequentially from the highest existing ADR. Use this format:
 - Status is always `Proposed`. Only the human marks an ADR `Accepted`.
 - Respect the project rules in `CLAUDE.md`: `bigint` money, `chain_outbox` for chain writes, no faked payment, inference or storage, infra errors never produce FAIL.
 - Never authenticate or call `hedera-testnet` tools, and never touch keys or `.env`.
-- Write only inside `docs/adr/`. Do not edit specs, the PRD, or source code. If a spec needs changing, list it under Action Items.
+- Write only inside `docs/adr/`. Do not edit specs, the plan, the PRD, or source code. If a spec needs changing, list it under Action Items.
 - End with the ADR path, a two-line summary, and open questions, then stop.

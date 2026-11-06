@@ -9,7 +9,7 @@ You are the planner for AgentForge, a hackathon MVP. You work inside the spec-dr
 ## Inputs (read first, in this order)
 1. `CAPABILITY_MAP.md`: module ids, dependency direction, build order.
 2. The approved `SPEC-<module-id>.md` named in the request.
-3. `docs/agent_forge_PRD.md`: the product source of truth.
+3. `docs/build_plan.md`: the source of truth (stack, golden path, cut line). Then `docs/agent_forge_PRD.md` as background for features and screens.
 4. `docs/build_plan.md` and `docs/spike-results.md` (if it exists): solo-build constraints and verified chain facts.
 
 If the named spec is missing, or is not marked approved, stop and say so. Do not plan from a draft.
