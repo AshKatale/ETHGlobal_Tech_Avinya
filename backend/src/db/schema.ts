@@ -101,6 +101,8 @@ export const agreements = pgTable('agreements', {
   // Set once the agent's POST /tasks returned 2xx. dispatch_error holds the last failure (retryable).
   dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
   dispatchError: text('dispatch_error'),
+  // When the current verification run started (set on submitted -> verifying). The recovery sweep (S-21) uses it.
+  verifyingSince: timestamp('verifying_since', { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -175,4 +177,18 @@ export const chainEvents = pgTable('chain_events', {
 export const chainCursor = pgTable('chain_cursor', {
   contract: text('contract').primaryKey(),
   lastConsensusTs: text('last_consensus_ts').notNull(),
+});
+
+// Audit log of every verifier signature (ADR-003). Holds only public facts: the signature itself is public on-chain,
+// so only its sha256 is stored. No key material.
+export const signatureAudit = pgTable('signature_audit', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: text('kind').notNull(), // verdict | delegation
+  agreementId: uuid('agreement_id').notNull(),
+  escrowAddress: text('escrow_address').notNull(),
+  signerAddress: text('signer_address').notNull(),
+  nonce: bigint('nonce', { mode: 'bigint' }).notNull(),
+  resultOrAmount: text('result_or_amount').notNull(), // PASS | FAIL for a verdict, tinybar for a delegation
+  sigSha256: text('sig_sha256').notNull(),
+  createdAt: createdAt(),
 });
