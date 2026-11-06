@@ -89,6 +89,24 @@ export async function readTaskTerms(task: Address) {
   return { price, maxSubBps: Number(maxSubBps), maxSubLegs: Number(maxSubLegs), subTotal, subLegCount: Number(legCount) - 1, payoutGrace: Number(payoutGrace), releasedAt: Number(releasedAt) };
 }
 
+/** Everything the contract itself says about its terms and sub-legs: the proof the designed terms were really deployed. */
+export async function readDesignProof(task: Address, legCount: number) {
+  const read = <T>(functionName: string, args?: unknown[]) =>
+    retryRead(() => publicClient.readContract({ address: task, abi: taskEscrowAbi, functionName, args } as never) as Promise<T>);
+  // Sequential on purpose: parallel calls trip the public relay's rate limit.
+  const price = await read<bigint>('price');
+  const deadline = await read<bigint>('deadline');
+  const maxSubBps = await read<number>('maxSubBps');
+  const maxSubLegs = await read<number>('maxSubLegs');
+  const payoutGrace = await read<number>('payoutGrace');
+  const legs: { legId: number; payee: Address; price: bigint; termsHash: Hex; status: number }[] = [];
+  for (let legId = 1; legId <= legCount; legId++) {
+    const [payee, legPrice, termsHash, status] = await read<readonly [Address, bigint, Hex, number]>('leg', [BigInt(legId)]);
+    legs.push({ legId, payee, price: legPrice, termsHash, status: Number(status) });
+  }
+  return { price, deadlineUnix: Number(deadline), maxSubBps: Number(maxSubBps), maxSubLegs: Number(maxSubLegs), payoutGrace: Number(payoutGrace), legs };
+}
+
 export const confirmFundingOnChain = (task: Address) =>
   send({ address: task, abi: taskEscrowAbi, functionName: 'confirmFunding', args: [], gas: GAS.confirmFunding });
 

@@ -24,6 +24,7 @@ export const taskEscrowAbi = parseAbi([
   'function maxSubLegs() view returns (uint8)',
   'function payoutGrace() view returns (uint32)',
   'function releasedAt() view returns (uint64)',
+  'function deadline() view returns (uint64)',
   'event Funded(bytes32 indexed agreementId, address client, uint256 amount)',
   'event SubLegAdded(bytes32 indexed agreementId, uint256 legId, address subAgent, uint256 price, bytes32 termsHash)',
   'event Submitted(bytes32 indexed agreementId, bytes32 deliverableHash)',
