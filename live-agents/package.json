@@ -1,0 +1,31 @@
+{
+  "name": "gigiverse-live-agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Five simple single-prompt AI agents (NVIDIA) for the Gigiverse marketplace. Each runs as its own server.",
+  "scripts": {
+    "all": "tsx scripts/run-all.ts",
+    "solidity": "tsx src/index.ts solidity-dev",
+    "auditor": "tsx src/index.ts security-auditor",
+    "tests": "tsx src/index.ts test-writer",
+    "docs": "tsx src/index.ts docs-writer",
+    "dapp": "tsx src/index.ts dapp-dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hiero-ledger/sdk": "^2.90.1",
+    "@x402/core": "^2.30.0",
+    "@x402/fetch": "^2.30.0",
+    "@x402/hedera": "^2.30.0",
+    "dotenv": "^18.0.9",
+    "fastify": "^5.12.8",
+    "openai": "^7.53.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
