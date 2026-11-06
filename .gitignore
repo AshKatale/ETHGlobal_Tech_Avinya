@@ -46,3 +46,6 @@ temp/
 # Testing
 .nyc_output/
 .localpg/
+
+# Agent team: chain lock
+.locks/
