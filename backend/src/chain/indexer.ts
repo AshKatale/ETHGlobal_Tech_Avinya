@@ -6,6 +6,7 @@ import { db, schema } from '../db/index.js';
 import { env } from '../env.js';
 import { escrowAbi } from './abi.js';
 import { dispatchAgreement } from '../lib/agentClient.js';
+import { recoverStuckVerifying } from '../lib/recovery.js';
 
 type MirrorLog = {
   address: string; data: string; topics: string[]; timestamp: string; transaction_hash: string; index: number;
@@ -113,6 +114,11 @@ export async function indexOnce() {
   if (running) return;
   running = true;
   try {
+    // S-21: free agreements stuck in 'verifying' so the retry works.
+    try {
+      const freed = await recoverStuckVerifying();
+      if (freed.length) console.warn(`[recovery] reset ${freed.length} stuck verification(s)`);
+    } catch (e) { console.error('[recovery]', (e as Error).message); }
     const active = await db
       .select()
       .from(schema.agreements)

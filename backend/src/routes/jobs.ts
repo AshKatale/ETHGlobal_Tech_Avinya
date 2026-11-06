@@ -19,7 +19,13 @@ export async function runVerification(agreementId: string) {
   const [agreement] = await db.select().from(schema.agreements).where(eq(schema.agreements.id, agreementId)).limit(1);
   if (!agreement) return;
   if (!canTransition(agreement.status as AgreementStatus, 'verifying')) return;
-  await db.update(schema.agreements).set({ status: 'verifying' }).where(eq(schema.agreements.id, agreementId));
+  // Atomic claim so two simultaneous triggers (submit + retry) start one run. verifying_since feeds the recovery sweep (S-21).
+  const claimed = await db
+    .update(schema.agreements)
+    .set({ status: 'verifying', verifyingSince: new Date() })
+    .where(and(eq(schema.agreements.id, agreementId), eq(schema.agreements.status, agreement.status)))
+    .returning({ id: schema.agreements.id });
+  if (claimed.length === 0) return;
 
   try {
     const [request] = await db.select().from(schema.requests).where(eq(schema.requests.id, agreement.requestId)).limit(1);

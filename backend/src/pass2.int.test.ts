@@ -129,3 +129,35 @@ describe.skipIf(!HAS_DB)('S-09 data exposure', () => {
     await app.close();
   });
 });
+
+describe.skipIf(!HAS_DB)('S-21 stuck verification recovery', () => {
+  it('resets old verifying rows to submitted with an ERROR row, once, never FAIL; leaves fresh and settled ones', async () => {
+    const { recoverStuckVerifying, STUCK_MESSAGE } = await import('./lib/recovery.js');
+    const u = await fx.user();
+    const ag = await fx.agent(u.id);
+    const stuck = await fx.agreement(u.id, ag.id, { status: 'verifying' });
+    const fresh = await fx.agreement(u.id, ag.id, { status: 'verifying' });
+    const settling = await fx.agreement(u.id, ag.id, { status: 'verifying' });
+    const legacy = await fx.agreement(u.id, ag.id, { status: 'verifying' }); // no verifying_since: falls back to the submission time
+    const set = (id: string, mins: number) => db.update(schema.agreements).set({ verifyingSince: new Date(Date.now() - mins * 60_000) }).where(eq(schema.agreements.id, id));
+    await set(stuck.id, 11); await set(fresh.id, 3); await set(settling.id, 30);
+    await db.insert(schema.verdicts).values({ agreementId: settling.id, result: 'PASS' });
+    await db.insert(schema.submissions).values({ agreementId: legacy.id, content: 'x', deliverableHash: 'h', submittedAt: new Date(Date.now() - 20 * 60_000) });
+
+    const first = await recoverStuckVerifying();
+    expect(first).toContain(stuck.id);
+    expect(first).toContain(legacy.id);
+    expect(first).not.toContain(fresh.id);
+    expect(first).not.toContain(settling.id);
+    expect(await recoverStuckVerifying()).not.toContain(stuck.id); // idempotent
+
+    const row = async (id: string) => (await db.select().from(schema.agreements).where(eq(schema.agreements.id, id)))[0];
+    expect((await row(stuck.id)).status).toBe('submitted');
+    expect((await row(fresh.id)).status).toBe('verifying');
+    expect((await row(settling.id)).status).toBe('verifying');
+    const runs = await db.select().from(schema.verifications).where(eq(schema.verifications.agreementId, stuck.id));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ result: 'ERROR', error: STUCK_MESSAGE });
+    expect(runs.some((r) => r.result === 'FAIL')).toBe(false);
+  });
+});
