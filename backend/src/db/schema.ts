@@ -11,6 +11,10 @@ export const users = pgTable('users', {
   address: text('address').notNull().unique(), // lowercased 0x address
   displayName: text('display_name'),
   hederaAccountId: text('hedera_account_id'),
+  // Optional second factor: when a password is set, signing in needs the wallet signature AND the password.
+  email: text('email').unique(), // lowercased
+  passwordHash: text('password_hash'), // scrypt, see lib/password.ts. Never returned by the API.
+  role: text('role'), // client | lister | both
   createdAt: createdAt(),
 });
 
