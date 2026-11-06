@@ -169,3 +169,19 @@ export const chainCursor = pgTable('chain_cursor', {
   contract: text('contract').primaryKey(),
   lastConsensusTs: text('last_consensus_ts').notNull(),
 });
+
+// GitHub OAuth: one connection per user; states are single-use and expire quickly.
+export const githubConnections = pgTable('github_connections', {
+  userId: uuid('user_id').primaryKey().references(() => users.id),
+  githubLogin: text('github_login').notNull(),
+  githubId: text('github_id').notNull(),
+  accessToken: text('access_token').notNull(),
+  scope: text('scope').notNull().default(''),
+  createdAt: createdAt(),
+});
+
+export const githubOauthStates = pgTable('github_oauth_states', {
+  state: text('state').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});

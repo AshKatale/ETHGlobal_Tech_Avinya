@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { ZodError } from 'zod';
@@ -8,6 +9,7 @@ import { marketplaceRoutes } from './routes/marketplace.js';
 import { benchmarkRoutes } from './routes/benchmark.js';
 import { jobRoutes } from './routes/jobs.js';
 import { a2aRoutes } from './routes/a2a.js';
+import { githubRoutes } from './routes/github.js';
 import { startIndexer } from './chain/indexer.js';
 
 // Postgres bigint columns (verdict nonce) come back as BigInt; make them JSON-safe as decimal strings.
@@ -41,10 +43,11 @@ export async function buildServer() {
   await app.register(benchmarkRoutes);
   await app.register(jobRoutes);
   await app.register(a2aRoutes);
+  await app.register(githubRoutes);
   return app;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const app = await buildServer();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   startIndexer();

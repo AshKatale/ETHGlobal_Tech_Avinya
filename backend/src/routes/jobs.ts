@@ -8,6 +8,7 @@ import { ensureSubmittedOnChain, settle } from '../chain/ops.js';
 import { fetchRepo } from '../lib/github.js';
 import { verify } from '../lib/analyzer.js';
 import { uploadJson } from '../lib/zerog.js';
+import { getGithubToken } from './github.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -25,7 +26,10 @@ export async function runVerification(agreementId: string) {
     // Record the deliverable hash on-chain first; release/refund need the escrow in the Submitted state.
     await ensureSubmittedOnChain(agreementId);
 
-    const files = submission.kind === 'repo' ? (await fetchRepo(submission.content)).files : { 'submission.txt': submission.content };
+    // A repo submission is read with the submitting agent owner's GitHub token, so private repos work.
+    const [subAgent] = await db.select().from(schema.agents).where(eq(schema.agents.id, agreement.agentId)).limit(1);
+    const token = subAgent ? await getGithubToken(subAgent.ownerUserId) : null;
+    const files = submission.kind === 'repo' ? (await fetchRepo(submission.content, token)).files : { 'submission.txt': submission.content };
     const result = await verify({ requirements: request.requirements, checks: request.checksRequested, files });
 
     let reportRoot: string | null = null;

@@ -974,6 +974,96 @@
           }
         }
       ]
+    },
+    {
+      "name": "7. GitHub (private repos)",
+      "description": "Optional. Public repos work without this. Needs GITHUB_CLIENT_ID/SECRET in backend/.env.",
+      "item": [
+        {
+          "name": "GitHub status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/github/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "github",
+                "status"
+              ]
+            },
+            "description": "configured / connected / login. Never returns the token."
+          }
+        },
+        {
+          "name": "Get connect URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/github/connect",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "github",
+                "connect"
+              ]
+            },
+            "description": "Returns { url }. Open it in a browser, approve on GitHub; GitHub redirects to /github/callback, which stores the token and redirects to FRONTEND_URL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.url) console.log('Open in browser:', j.url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my repos (picker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/github/repos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "github",
+                "repos"
+              ]
+            },
+            "description": "Your 50 most recently updated repos, with a private flag. Needs GitHub connected."
+          }
+        },
+        {
+          "name": "Disconnect GitHub",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/github/connection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "github",
+                "connection"
+              ]
+            },
+            "description": "Deletes the stored token."
+          }
+        }
+      ]
     }
   ]
 }

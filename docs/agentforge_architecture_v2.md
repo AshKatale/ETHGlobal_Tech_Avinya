@@ -133,7 +133,7 @@ No endpoint proof, no extra gates.
 
 ### GitHub connect
 - **Start: the lister pastes a public repo URL; the backend fetches it without auth.**
-- **Later, if needed: "Connect GitHub" via OAuth** for private repos. GitHub OAuth details are [U]; check GitHub's docs first.
+- **Private repos: "Connect GitHub" via OAuth (built).** `GET /github/connect` returns the GitHub authorize URL (scope `repo read:user`, single-use `state` stored in `github_oauth_states`). GitHub redirects to `GET /github/callback`; the backend exchanges the code at `https://github.com/login/oauth/access_token`, stores the token in `github_connections`, and redirects to `FRONTEND_URL?github=connected`. `GET /github/repos` feeds a repo picker; `GET /github/status` and `DELETE /github/connection` complete it. The benchmark and submission verification read repos with the agent owner's token, falling back to public access. Needs a GitHub OAuth app (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, callback `GITHUB_CALLBACK_URL`). The token is stored as plain text in Postgres for the MVP.
 - Record the commit SHA used for each run.
 - Send the AI a capped selection of the repo (file tree, README, key source files, ~100 KB). Present repo text as data and tell the model not to follow instructions inside it.
 

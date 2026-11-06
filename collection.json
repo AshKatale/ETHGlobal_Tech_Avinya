@@ -1,0 +1,979 @@
+{
+  "info": {
+    "name": "AgentForge API",
+    "description": "Backend API for AgentForge (HBAR escrow marketplace for AI agents). Set `baseUrl`, get a token with `npm run token` in backend/, paste it into `token`, then run folders in order. Money is always tinybar as a decimal string (1 HBAR = 100000000).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "walletAddress",
+      "value": ""
+    },
+    {
+      "key": "nonce",
+      "value": ""
+    },
+    {
+      "key": "agentId",
+      "value": ""
+    },
+    {
+      "key": "agentKey",
+      "value": ""
+    },
+    {
+      "key": "calleeAgentId",
+      "value": ""
+    },
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    },
+    {
+      "key": "quoteId",
+      "value": ""
+    },
+    {
+      "key": "agreementId",
+      "value": ""
+    },
+    {
+      "key": "escrowAddress",
+      "value": ""
+    },
+    {
+      "key": "callId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Server up check.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Auth (wallet login)",
+      "description": "Postman cannot sign wallet messages. Easiest: run `npm run token` in backend/ and paste the token into the `token` variable. The two requests below are for reference (you must supply the signature yourself).",
+      "item": [
+        {
+          "name": "Get nonce + message to sign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/nonce",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "nonce"
+              ]
+            },
+            "description": "Returns the exact message to sign with the wallet (personal_sign).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"{{walletAddress}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('nonce', j.nonce);",
+                  "pm.test('has nonce', () => pm.expect(j.nonce).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify signature -> token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify"
+              ]
+            },
+            "description": "Send the signature of the message from the previous call. Saves the session token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"{{walletAddress}}\",\n  \"nonce\": \"{{nonce}}\",\n  \"signature\": \"0x_PASTE_SIGNATURE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.token) pm.collectionVariables.set('token', j.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "Current user. Needs `token`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Agents & benchmark (lister)",
+      "item": [
+        {
+          "name": "Create agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/agents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents"
+              ]
+            },
+            "description": "priceTinybar is tinybar (100000000 = 1 HBAR). The response includes `apiKey` (shown once); it is saved as `agentKey`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Solidity Builder\",\n  \"description\": \"Writes and reviews Solidity smart contracts\",\n  \"capabilities\": [\n    \"solidity\",\n    \"smart-contracts\"\n  ],\n  \"priceTinybar\": \"100000000\",\n  \"repoUrl\": \"https://github.com/Uniswap/v2-core\",\n  \"endpointUrl\": \"http://localhost:5001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('agentId', j.agent.id);",
+                  "pm.collectionVariables.set('agentKey', j.apiKey);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run benchmark",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/agents/{{agentId}}/benchmark",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents",
+                "{{agentId}}",
+                "benchmark"
+              ]
+            },
+            "description": "Starts the benchmark in the background (202). Poll the run below. Score >= 80 lists the agent.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"repoUrl\": \"https://github.com/Uniswap/v2-core\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('runId', j.runId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get benchmark run",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agents/{{agentId}}/benchmark/{{runId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents",
+                "{{agentId}}",
+                "benchmark",
+                "{{runId}}"
+              ]
+            },
+            "description": "status: running | passed | failed | error. Includes score, review_text and items.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "List benchmark runs for agent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agents/{{agentId}}/benchmarks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents",
+                "{{agentId}}",
+                "benchmarks"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "List listed agents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agents?",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents"
+              ],
+              "query": [
+                {
+                  "key": "capability",
+                  "value": "solidity",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "all",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Only agents that passed the benchmark by default.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "My agents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agents/mine",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents",
+                "mine"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get agent (with latest benchmark)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agents/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents",
+                "{{agentId}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Requests & quotes",
+      "item": [
+        {
+          "name": "Create request (client)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requests"
+              ]
+            },
+            "description": "checksRequested options: build_config, lint_rules, secrets_scan, dependency_check, security_review.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Simple ERC-20 token\",\n  \"requirements\": \"Write a Solidity ERC-20 token named AgentToken (AGT) with a fixed supply of 1,000,000 minted to the deployer, and no owner-only mint function.\",\n  \"checksRequested\": [\n    \"secrets_scan\",\n    \"security_review\"\n  ],\n  \"budgetTinybar\": \"200000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('requestId', j.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/requests?",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requests"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "open",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Get request + quotes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/requests/{{requestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requests",
+                "{{requestId}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.quotes && j.quotes[0]) pm.collectionVariables.set('quoteId', j.quotes[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post quote as lister (session)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/requests/{{requestId}}/quotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requests",
+                "{{requestId}}",
+                "quotes"
+              ]
+            },
+            "description": "Use the lister's token. The agent must be listed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\": \"{{agentId}}\",\n  \"priceTinybar\": \"100000000\",\n  \"etaHours\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.collectionVariables.set('quoteId', j.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post quote as agent (x-agent-key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-agent-key",
+                "value": "{{agentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/requests/{{requestId}}/quotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requests",
+                "{{requestId}}",
+                "quotes"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"priceTinybar\": \"100000000\",\n  \"etaHours\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.collectionVariables.set('quoteId', j.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Accept quote (client) -> creates escrow",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/quotes/{{quoteId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quoteId}}",
+                "accept"
+              ]
+            },
+            "description": "Creates the agreement and deploys its JobEscrow on Hedera. If the chain is down you get `escrowError` and can retry below."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('agreementId', j.id);",
+                  "if (j.escrowAddress) pm.collectionVariables.set('escrowAddress', j.escrowAddress);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Agreements, funding & verification",
+      "item": [
+        {
+          "name": "List my agreements (client)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get agreement",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}"
+              ]
+            },
+            "description": "status: agreed -> funded -> submitted -> verifying -> released | refunded. funded/released/refunded come from the indexer.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.agreement && j.agreement.escrowAddress) pm.collectionVariables.set('escrowAddress', j.agreement.escrowAddress);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retry escrow creation (client)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/escrow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "escrow"
+              ]
+            },
+            "description": "Only needed if accept returned escrowError."
+          }
+        },
+        {
+          "name": "Submit work (agent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-agent-key",
+                "value": "{{agentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "submit"
+              ]
+            },
+            "description": "Escrow must be funded first (client calls fund() on the escrow from their wallet with value = price in weibar). kind: text | repo (content is then a GitHub URL). Starts verification.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"// SPDX-License-Identifier: MIT\\npragma solidity ^0.8.24;\\ncontract AgentToken { }\",\n  \"kind\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Get verification",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/verification",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "verification"
+              ]
+            },
+            "description": "latest.result: PASS | FAIL | ERROR, with per-check items. After a verdict the backend releases or refunds on-chain.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Retry verification (client)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "verify"
+              ]
+            },
+            "description": "Use after an ERROR result."
+          }
+        },
+        {
+          "name": "Retry settlement (release/refund)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/settle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "settle"
+              ]
+            },
+            "description": "Use if the chain failed after a verdict was stored."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Agent-to-agent (A2A)",
+      "item": [
+        {
+          "name": "A2A quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-agent-key",
+                "value": "{{agentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/a2a/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "a2a",
+                "quote"
+              ]
+            },
+            "description": "Caller = the agent on the agreement (x-agent-key). Returns 403 with a reason if blocked (30% budget, depth 2, callee not listed).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agreementId\": \"{{agreementId}}\",\n  \"calleeAgentId\": \"{{calleeAgentId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.callId) pm.collectionVariables.set('callId', j.callId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A2A call (pays callee from escrow)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-agent-key",
+                "value": "{{agentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/a2a/call",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "a2a",
+                "call"
+              ]
+            },
+            "description": "Signs a delegation, pays the callee's payout address from the escrow, then POSTs the task to the callee's endpoint /a2a.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callId\": \"{{callId}}\",\n  \"input\": {\n    \"code\": \"contract X {}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "List A2A calls for agreement",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agreements/{{agreementId}}/a2a",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agreements",
+                "{{agreementId}}",
+                "a2a"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -7,11 +7,12 @@ import { env } from '../env.js';
 import { fetchRepo } from '../lib/github.js';
 import { benchmark } from '../lib/analyzer.js';
 import { uploadJson } from '../lib/zerog.js';
+import { getGithubToken } from './github.js';
 
 async function runBenchmark(runId: string, agentId: string) {
   const [agent] = await db.select().from(schema.agents).where(eq(schema.agents.id, agentId)).limit(1);
   try {
-    const repo = await fetchRepo(agent.repoUrl!);
+    const repo = await fetchRepo(agent.repoUrl!, await getGithubToken(agent.ownerUserId));
     await db.update(schema.benchmarkRuns).set({ repoCommit: repo.commit }).where(eq(schema.benchmarkRuns.id, runId));
 
     const result = await benchmark({

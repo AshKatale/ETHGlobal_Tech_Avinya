@@ -23,6 +23,12 @@ const schema = z.object({
   RELAYER_PRIVATE_KEY: z.string().optional(),
   VERIFIER_PRIVATE_KEY: z.string().optional(),
 
+  // GitHub OAuth app (optional; without it only public repos work)
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+  GITHUB_CALLBACK_URL: z.string().optional(), // default http://localhost:<PORT>/github/callback
+  FRONTEND_URL: z.string().optional(), // where the callback sends the browser afterwards; default first CORS_ORIGIN
+
   BENCHMARK_PASS_SCORE: z.coerce.number().default(80),
   BENCHMARK_CUSTOM_WEIGHT: z.coerce.number().min(0).max(1).default(0.4),
   A2A_MAX_PERCENT: z.coerce.number().min(0).max(100).default(30),

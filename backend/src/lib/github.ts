@@ -1,7 +1,6 @@
-// Fetch a PUBLIC GitHub repo without auth, using the GitHub REST API + raw.githubusercontent.com.
+// Fetch a GitHub repo (public without auth, private with the lister's OAuth token), using the GitHub REST API + raw.githubusercontent.com.
 // Endpoints used: GET /repos/{o}/{r}, GET /repos/{o}/{r}/commits/{ref}, GET /repos/{o}/{r}/git/trees/{sha}?recursive=1.
-// Unverified against GitHub's docs in this session; if one 404s, check the docs. Unauthenticated limit is 60 req/hour.
-// Set GITHUB_TOKEN in .env to raise it.
+// Unauthenticated limit is 60 req/hour (already hit during testing). OAuth tokens get 5000/hour.
 
 export class RepoError extends Error {}
 
@@ -28,17 +27,28 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } {
   return { owner: m[1], repo: m[2] };
 }
 
-function headers(): Record<string, string> {
-  const h: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'agentforge' };
-  if (process.env.GITHUB_TOKEN) h.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+function headers(token?: string | null, accept = 'application/vnd.github+json'): Record<string, string> {
+  const h: Record<string, string> = { Accept: accept, 'User-Agent': 'agentforge', 'X-GitHub-Api-Version': '2022-11-28' };
+  const t = token ?? process.env.GITHUB_TOKEN;
+  if (t) h.Authorization = `Bearer ${t}`;
   return h;
 }
 
-async function gh<T>(path: string): Promise<T> {
-  const res = await fetch(`https://api.github.com${path}`, { headers: headers() });
-  if (res.status === 404) throw new RepoError('Repo not found or not public');
-  if (res.status === 403 || res.status === 429) throw new RepoError('GitHub rate limit hit; set GITHUB_TOKEN or retry later');
-  if (!res.ok) throw new RepoError(`GitHub error ${res.status}`);
+/** Map a GitHub failure to a clear message. Exported so it can be unit tested. */
+export function githubErrorMessage(status: number, hasToken: boolean, rateRemaining?: string | null): string {
+  if (status === 401) return 'GitHub token is invalid or revoked; reconnect GitHub';
+  if (status === 429 || (status === 403 && rateRemaining === '0')) return 'GitHub rate limit hit; connect GitHub or retry later';
+  if (status === 404 || status === 403) {
+    return hasToken
+      ? 'Repo not found, or your connected GitHub account cannot access it'
+      : 'Repo not found or private; connect GitHub to use a private repo';
+  }
+  return `GitHub error ${status}`;
+}
+
+async function gh<T>(path: string, token?: string | null): Promise<T> {
+  const res = await fetch(`https://api.github.com${path}`, { headers: headers(token) });
+  if (!res.ok) throw new RepoError(githubErrorMessage(res.status, !!(token ?? process.env.GITHUB_TOKEN), res.headers.get('x-ratelimit-remaining')));
   return (await res.json()) as T;
 }
 
@@ -54,12 +64,14 @@ function priority(path: string): number {
   return 10;
 }
 
-export async function fetchRepo(url: string): Promise<RepoSnapshot> {
+/** `token` is the lister's OAuth token (private repos). Without one, only public repos work. */
+export async function fetchRepo(url: string, token?: string | null): Promise<RepoSnapshot> {
   const { owner, repo } = parseRepoUrl(url);
-  const meta = await gh<{ default_branch: string }>(`/repos/${owner}/${repo}`);
-  const head = await gh<{ sha: string }>(`/repos/${owner}/${repo}/commits/${meta.default_branch}`);
-  const tree = await gh<{ tree: { path: string; type: string; size?: number }[]; truncated: boolean }>(
+  const meta = await gh<{ default_branch: string }>(`/repos/${owner}/${repo}`, token);
+  const head = await gh<{ sha: string }>(`/repos/${owner}/${repo}/commits/${meta.default_branch}`, token);
+  const tree = await gh<{ tree: { path: string; type: string; sha: string; size?: number }[]; truncated: boolean }>(
     `/repos/${owner}/${repo}/git/trees/${head.sha}?recursive=1`,
+    token,
   );
 
   const blobs = tree.tree.filter((n) => n.type === 'blob' && !SKIP_DIRS.test(n.path));
@@ -75,9 +87,10 @@ export async function fetchRepo(url: string): Promise<RepoSnapshot> {
   let truncated = tree.truncated || blobs.length > treePaths.length;
   for (const f of candidates) {
     if (total >= MAX_TOTAL_CHARS) { truncated = true; break; }
-    const res = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${head.sha}/${f.path}`, {
-      headers: { 'User-Agent': 'agentforge' },
-    });
+    // Authenticated: raw blob via the API (works for private repos). Public: raw.githubusercontent.com (no API quota).
+    const res = token
+      ? await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs/${f.sha}`, { headers: headers(token, 'application/vnd.github.raw+json') })
+      : await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${head.sha}/${f.path}`, { headers: { 'User-Agent': 'agentforge' } });
     if (!res.ok) continue;
     let text = await res.text();
     if (text.length > MAX_FILE_CHARS) { text = text.slice(0, MAX_FILE_CHARS); truncated = true; }

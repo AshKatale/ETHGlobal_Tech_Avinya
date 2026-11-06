@@ -44,3 +44,14 @@ describe('parseRepoUrl', () => {
     expect(() => parseRepoUrl('https://example.com/foo/bar')).toThrow();
   });
 });
+
+import { githubErrorMessage } from './github.js';
+describe('github errors', () => {
+  it('explains each failure', () => {
+    expect(githubErrorMessage(404, false)).toMatch(/connect GitHub/);
+    expect(githubErrorMessage(404, true)).toMatch(/cannot access/);
+    expect(githubErrorMessage(403, false, '0')).toMatch(/rate limit/);
+    expect(githubErrorMessage(401, true)).toMatch(/reconnect/);
+    expect(githubErrorMessage(500, true)).toBe('GitHub error 500');
+  });
+});
