@@ -18,6 +18,8 @@ const schema = z.object({
   ZEROG_INDEXER_RPC: z.string().default('https://indexer-storage-testnet-turbo.0g.ai'),
   BACKEND_0G_PRIVATE_KEY: z.string().optional(),
 
+  FACTORY_ADDRESS: z.string().optional(),
+  INDEXER_ENABLED: z.string().default('true'),
   RELAYER_PRIVATE_KEY: z.string().optional(),
   VERIFIER_PRIVATE_KEY: z.string().optional(),
 
