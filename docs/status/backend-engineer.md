@@ -1,26 +1,22 @@
-updated: 2026-11-06 21:30 IST
-state: done (Wave A work order)
+updated: 2026-11-06 22:10 IST
+state: done (second pass)
 done:
-- baseline: tsc clean, vitest 15/15 before changes
-- 1 api.md published and updated to the routes (docs/contracts/api.md)
-- 2 agent dispatch on Funded (lib/agentClient.ts dispatchAgreement, indexer hook + sweep, POST /agreements/:id/dispatch retry, agreements.dispatched_at/dispatch_error); proof: backend/src/backend.int.test.ts 'agent dispatch' (5 tests)
-- 3 quote solicitation on POST /requests (solicitQuotes, Zod digit-string price); proof: int test 'quote solicitation'
-- 4 SSRF guard lib/ssrf.ts (http/https only, resolve + connect-time pinned lookup, private/loopback/link-local refused unless ALLOW_LOCAL_AGENTS=true, no redirects, timeout, size cap); proof: lib/ssrf.test.ts 33 tests
-- 5 submit requires exactly funded, atomic claim, latest submission everywhere (lib/submissions.ts); proof: int tests
-- 6 A2A race: lib/a2aReserve.ts advisory lock; proof: 2 racing calls pay 1, 6 parallel pay 3, 10 on one callId pay once
-- 7 settle auth (client or agent owner); proof: int test stranger 403 / client 502 / owner 502 / anon 401 (502 = reached chain code, no escrow)
-- 8 Delegated indexing (applyDelegated, unique index payments_a2a_tx); proof: int test
-- 9 env: GITHUB_TOKEN (already), ALLOW_LOCAL_AGENTS, AGENT_CALLBACK_SECRET in env.ts and .env.example; migration drizzle/0001_empty_patriot.sql
-- 10 seed: npm run seed; ran twice, second run created 0
-- 11 cleanup: void sql, void http, Phase 3 comment removed; tsc --noUnusedLocals clean
-- blocker handoffs S-01, S-02, S-04, S-05 addressed (see handoff responses)
-in progress: none
-blocked on: nothing
-needs from others: frontend/demo-agents/qa read docs/handoff/*__backend-engineer__api-wave-a-changes.md
+- baseline before pass 2: tsc clean, vitest 77/77 (8 files). After: tsc clean, vitest 102/102 (13 files).
+- 1 S-14 atomic accept; proof: pass2.int.test.ts 10 concurrent accepts -> one 201, nine 409, one agreement, one create-escrow call (chain stubbed)
+- 2 S-15 deadlines: 15 min minimum (400), 7 day default stored, accept re-checks; proof: lib/deadline.test.ts, int test
+- 3 S-09 redaction with optionalAuth; lib/access.ts; proof: unit tests and int test (anonymous, stranger, garbage token, other agent's key get no content; client, owner, agent key do)
+- 4 S-21 recovery sweep (lib/recovery.ts, runs in indexOnce); atomic verification claim; proof: int test (stuck, fresh, settling, legacy rows; idempotent; no FAIL)
+- 5 S-06 single-flight settle via transaction advisory lock (lib/singleFlight.ts; session locks do not work on the Neon pooler, first attempt sent 8 txs); proof: 8 concurrent settles -> 1 release
+- 6 A2A only when funded; proof: unit and int tests
+- 7 signature_audit table, written inside signVerdict/signDelegation before the signature is returned, GET /agreements/:id/audit; proof: int test with the real verifier key (local signing, no tx). QA's live delegations already wrote 2 rows.
+- 8 UI fields: latestScore, quote agentName/latestScore, a2a callerName/calleeName/txHash, timestamps, a2aMaxPercent, GET /config, requests?mine=true
+- 9 refund-timeout route + V2 ABI entries; proof: unit eligibility tests and stubbed-chain route test
+- 10 S-17 (self-hire by id always; same owner/payout only with A2A_BLOCK_SAME_OWNER=true, default off because both demo agents share one lister wallet and the demo would break), S-19 atomic nonce claim + expired nonce purge (login message format unchanged), S-20 http(s) URLs and no zero payout
+migrations: drizzle/0002_freezing_gertrude_yorkes.sql (signature_audit + agreements.verifying_since + index), applied by hand with IF NOT EXISTS via scripts/apply-sql.ts. db:push not used. FACTORY_ADDRESS and .env untouched.
 notes:
-- DB: db:push was NOT used. The shared Neon schema has extra columns not in schema.ts (agreements.task_account_id, task_dispatch_status, task_dispatch_error, task_dispatched_at; payments.payer_account_id) from another branch; drizzle push wanted to drop/rename them. I applied the generated migration SQL by hand (ALTER ... IF NOT EXISTS). Decide who owns those columns.
-- payments has pre-existing duplicate (tx_hash, release) rows, so the unique index is partial (kind = 'a2a' only).
-- Demo agents on localhost need ALLOW_LOCAL_AGENTS=true in the backend environment (off in backend/.env).
-- No real chain transaction was sent; .locks/chain not taken. 0G upload not attempted.
-NOT VERIFIED: dispatch/quote against a live demo agent; /a2a/call end to end (needs chain); Delegated from a real mirror-node event; ADR-001/003/004 and S-18/S-23 not done.
-next: qa golden-path run
+- DB pool max raised 5 -> 10 (single-flight holds a connection per in-flight settle).
+- S-19 login message domain/expiry text NOT changed (would break the frontend signing flow); S-20 contract-address check on payout NOT done; S-22 and S-23 untouched.
+- GET /agreements/:id/a2a txHash is matched by amount in order (payments have no call id).
+NOT VERIFIED: refund-timeout on a real V2 escrow (V2 not deployed; deployments.json has no hederaTestnetV2); readRefundTimeoutInfo V1 detection (ZeroData/Reverted error names) against a real V1 escrow; stuck-verifying sweep with a real 10 minute wait (tested with backdated rows); advisory lock across two backend processes.
+needs from others: frontend reads docs/handoff/frontend-engineer__backend-engineer__api-second-pass.md; qa reads qa-engineer__backend-engineer__second-pass-regression.md
+next: integration-lead decides on A2A_BLOCK_SAME_OWNER and the V2 FACTORY_ADDRESS switch

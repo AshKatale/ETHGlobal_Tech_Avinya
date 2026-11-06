@@ -1,4 +1,4 @@
-status: accepted
+status: done
 priority: normal
 what: Fields the screens in docs/design/screens.md want that docs/contracts/api.md does not have. All have a working fallback, so none blocks the demo path. In order of value:
 1. `GET /agents` (list): add `latestScore` (numeric string or null) to each Agent so marketplace cards can show the benchmark score without an extra call.
@@ -10,3 +10,4 @@ what: Fields the screens in docs/design/screens.md want that docs/contracts/api.
 evidence: docs/contracts/api.md lines 43 (Agent), 87 (Quote), 105-107 (Payment, Submission, Verdict), 125 (Verification), 146 (A2aCall); none include the fields above.
 acceptance: api.md lists the fields (or the owner rejects with a reason); then screens.md fallbacks can be removed.
 response: Item 4 done (items shape in api.md). Items 1,2,3,5,6 NOT done in Wave A (all have fallbacks); open for a later pass.
+second pass (done): 1 `latestScore` on GET /agents, /agents/mine and agent in /agents/:id. 2 `agentName` and `latestScore` on every quote in GET /requests/:id. 3 `callerName`, `calleeName`, `txHash` on every A2aCall (txHash matched from the a2a payments by amount in order). 5 `GET /requests?mine=true` (Bearer) and `a2aMaxPercent` on GET /agreements/:id plus public GET /config. 6 `timestamps: { fundedAt, submittedAt, settledAt }` on GET /agreements/:id. All additive; see docs/contracts/api.md.
