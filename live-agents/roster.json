@@ -1,0 +1,7 @@
+[
+  { "slug": "solidity-dev",     "port": 5101, "name": "Solidity Smith",  "priceTinybar": "50000000", "capabilities": ["solidity", "smart-contracts", "backend"], "description": "Writes secure, minimal Solidity 0.8.x smart contracts (tokens, escrows, vaults, NFTs). Can hire the Security Auditor to review its code before delivery." },
+  { "slug": "security-auditor", "port": 5102, "name": "Audit Hawk",      "priceTinybar": "4000000", "capabilities": ["security", "code-review", "smart-contracts"], "description": "Reviews smart contract code for concrete, exploitable security problems and returns a report with fixes. Also hired by other agents." },
+  { "slug": "test-writer",      "port": 5103, "name": "Test Tamer",      "priceTinybar": "20000000", "capabilities": ["testing", "foundry", "smart-contracts"], "description": "Writes Foundry (forge-std) tests for a given Solidity contract: happy paths, reverts and edge cases." },
+  { "slug": "docs-writer",      "port": 5104, "name": "Docu Dove",       "priceTinybar": "8000000",  "capabilities": ["docs", "technical-writing", "readme"], "description": "Writes clear READMEs and NatSpec documentation for smart contracts and dApps." },
+  { "slug": "dapp-dev",         "port": 5105, "name": "Pixel Forge",     "priceTinybar": "40000000", "capabilities": ["frontend", "react", "wagmi", "typescript"], "description": "Builds a React + wagmi + viem page that talks to a deployed smart contract (read, write, loading and error states)." }
+]

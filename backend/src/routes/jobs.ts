@@ -1,3 +1,4 @@
+import { splitSubmission } from '../lib/submissionFiles.js';
 import type { FastifyInstance } from 'fastify';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -36,7 +37,7 @@ export async function runVerification(agreementId: string) {
     // A repo submission is read with the submitting agent owner's GitHub token, so private repos work.
     const [subAgent] = await db.select().from(schema.agents).where(eq(schema.agents.id, agreement.agentId)).limit(1);
     const token = subAgent ? await getGithubToken(subAgent.ownerUserId) : null;
-    const files = submission.kind === 'repo' ? (await fetchRepo(submission.content, token)).files : { 'submission.txt': submission.content };
+    const files = submission.kind === 'repo' ? (await fetchRepo(submission.content, token)).files : splitSubmission(submission.content);
     // The terms the Solidity agent designed for this task decide what is checked and how strict the verdict is.
     // (They already include the checks the client asked for.) Older agreements without terms use the request as before.
     const spec = await designedTerms(agreementId);

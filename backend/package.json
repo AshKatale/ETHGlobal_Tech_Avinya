@@ -8,6 +8,8 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "flow": "tsx scripts/flow.ts",
+    "seed:agents": "tsx scripts/seed-live-agents.ts",
+    "live-flow": "tsx scripts/live-flow.ts",
     "token": "tsx scripts/token.ts",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",

@@ -105,7 +105,11 @@ export async function dispatchTask(agreementId: string): Promise<'sent' | 'faile
       const res = await post(`${agent.endpointUrl.replace(/\/$/, '')}/tasks`, payload);
       if (res.ok) { await record('sent', null); return 'sent'; }
       lastError = `agent answered ${res.status}`;
-    } catch (e) { lastError = (e as Error).message; }
+    } catch (e) {
+      // undici reports every network failure as "fetch failed"; the real reason (ECONNREFUSED, timeout...) is in cause.
+      const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+      lastError = cause ? `${(e as Error).message}: ${cause.code ?? cause.message}` : (e as Error).message;
+    }
     await new Promise((r) => setTimeout(r, 2000 * attempt));
   }
   await record('failed', lastError);

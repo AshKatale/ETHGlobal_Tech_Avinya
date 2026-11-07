@@ -10,10 +10,11 @@ import { taskEscrowAbi, FUND_GAS } from '@/lib/escrow';
 import { ago, errMessage, shortAddr } from '@/lib/format';
 import { contractUrl, shortTx, txUrl } from '@/lib/hashscan';
 import { fmtHbar, fromWeibar, toWeibar } from '@/lib/money';
-import { useMe } from '@/lib/queries';
+import { useDesign, useMe } from '@/lib/queries';
 import { CHECKS, type AgreementDetail, type AgreementStatus, type FundingInfo, type VerificationDetail } from '@/lib/types';
 import { useSession } from '@/providers/Session';
 import { useToast } from '@/providers/Toasts';
+import ContractDesign, { SubContracts } from '@/components/ContractDesign';
 import Notice, { Empty } from '@/components/Notice';
 import StatusChip from '@/components/StatusChip';
 import { Icon } from '@/components/Icon';
@@ -50,6 +51,8 @@ export default function JobPage() {
     enabled: status === 'agreed' && !!d?.agreement.escrowAddress,
   });
 
+  const design = useDesign(id, !!status && FINAL.includes(status) && (d?.subLegs ?? []).every((l) => l.status !== 'pending'));
+
   const [busy, setBusy] = useState<string>();
   const refresh = () => { qc.invalidateQueries({ queryKey: ['job', id] }); qc.invalidateQueries({ queryKey: ['verification', id] }); };
 
@@ -74,7 +77,7 @@ export default function JobPage() {
         <div className="page-head"><div>
           <p className="eyebrow-p">Job · {a.id.slice(0, 8)}</p>
           <h1>{d.request.title}</h1>
-          <p>Agent <Link className="link" href={`/agents/${d.agent.id}`}>{d.agent.name}</Link> · {fmtHbar(a.priceTinybar)} · <StatusChip status={a.status} /></p>
+          <p>Agent <Link className="link" href={`/agents/${d.agent.id}`}>{d.agent.name}</Link> · {fmtHbar(a.priceTinybar)} · <StatusChip status={a.status} />{a.escrowAddress && <> · <a className="link" href="#design">How this contract was designed</a></>}</p>
         </div></div>
         {/* Money states arrive from the chain after a delay, so say it aloud when the status changes. */}
         <span className="sr" role="status" aria-live="polite">Job status: {a.status}</span>
@@ -200,6 +203,28 @@ export default function JobPage() {
             {!isClient && session.signedIn && <Notice>You are viewing this job. Only the client can fund or retry steps.</Notice>}
           </aside>
         </div>
+
+        {/* ---- how the contract was designed, with proof from the chain ---- */}
+        {a.escrowAddress && (
+          <div className="card" id="design" style={{ marginTop: 20 }}>
+            <h3>Contract design <small>decided by the designer, checked against the contract</small></h3>
+            {design.isLoading && <div className="skel" style={{ height: 200 }} />}
+            {design.error && <Notice kind="warn">Could not load the design. {(design.error as Error).message}</Notice>}
+            {design.data && !design.data.root && <Notice kind="warn">This contract has no stored design.</Notice>}
+            {design.data?.root && (
+              <ContractDesign mode="full" requirements={design.data.inputs.requirements} agent={design.data.inputs.agent}
+                spec={design.data.root.spec} source={design.data.root.source} specHash={design.data.root.specHash} deployTx={design.data.root.deployTx}
+                requestedChecks={d.request.checksRequested} proof={design.data.proof} contract={design.data.contract} />
+            )}
+            {design.data && design.data.subs.length > 0 && (
+              <div style={{ marginTop: 22 }}>
+                <h3 style={{ fontSize: 15.5 }}>Sub-agent contracts <small>{design.data.subs.length} hired inside this job</small></h3>
+                <SubContracts subs={design.data.subs} />
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );

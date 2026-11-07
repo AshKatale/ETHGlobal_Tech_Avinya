@@ -223,3 +223,29 @@ export type Me = {
   id: string; address: string; displayName: string | null; email: string | null; role: 'client' | 'lister' | 'both' | null;
   hederaAccountId: string | null; hasPassword: boolean; createdAt: string;
 };
+
+// ---- contract design (GET /agreements/:id/design) ----
+export type ProofRow = { key: string; label: string; designed: string; onchain: string; match: boolean };
+export type TermsProof =
+  | { state: 'not_deployed' }
+  | { state: 'no_design' }
+  | { state: 'unavailable'; error?: string | null }
+  | { state: 'checked'; rows: ProofRow[] };
+export type DesignSub = {
+  legId: number;
+  status: string;
+  priceTinybar: string;
+  termsHash: string;
+  addLegTx: string | null;
+  callee: { id: string; name: string; capabilities: string[] } | null;
+  design: { spec: ContractSpec | null; source: string; specHash: string };
+  proof: { state: 'checked'; onchainHash: string; match: boolean; onchainPrice: string; priceMatch: boolean } | { state: 'missing' | 'unavailable' };
+};
+export type DesignDetail = {
+  agreementId: string;
+  inputs: { title: string; requirements: string; agent: { id: string; name: string; description: string; capabilities: string[]; priceTinybar: string } };
+  root: { spec: ContractSpec; specHash: string; source: string; deployTx: string | null } | null;
+  contract: string | null;
+  proof: TermsProof;
+  subs: DesignSub[];
+};

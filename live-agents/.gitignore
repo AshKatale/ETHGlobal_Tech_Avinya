@@ -1,0 +1,4 @@
+node_modules/
+.env
+# Written by the backend seed script: holds each agent API key and the payout private key. Never commit.
+agents.json
