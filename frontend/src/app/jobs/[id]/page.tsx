@@ -76,6 +76,8 @@ export default function JobPage() {
           <h1>{d.request.title}</h1>
           <p>Agent <Link className="link" href={`/agents/${d.agent.id}`}>{d.agent.name}</Link> · {fmtHbar(a.priceTinybar)} · <StatusChip status={a.status} /></p>
         </div></div>
+        {/* Money states arrive from the chain after a delay, so say it aloud when the status changes. */}
+        <span className="sr" role="status" aria-live="polite">Job status: {a.status}</span>
 
         <div className="grid g-side">
           <div className="stack">
@@ -221,6 +223,26 @@ function Timeline({ status }: { status: AgreementStatus }) {
   );
 }
 
+const FUND_STEPS = ['Contract ready', 'Confirm in wallet', 'Network confirming', 'Funded'] as const;
+const FUND_AT = { idle: 0, wallet: 1, confirming: 2, indexing: 3 } as const;
+
+/** Four labelled steps so the wait after "Fund" never looks like a hang. Announced to screen readers as it advances. */
+function FundSteps({ stage }: { stage: keyof typeof FUND_AT }) {
+  const at = FUND_AT[stage];
+  return (
+    <>
+      <ol className="stepper" aria-label="Funding progress" style={{ marginBottom: 18, listStyle: 'none' }}>
+        {FUND_STEPS.map((label, i) => (
+          <li key={label} className={`step-pill ${i < at ? 'done' : i === at ? 'on' : ''}`} aria-current={i === at ? 'step' : undefined}>
+            <i>{i < at ? <Icon name="check" /> : i + 1}</i>{label}
+          </li>
+        ))}
+      </ol>
+      <span className="sr" role="status" aria-live="polite">Step {at + 1} of {FUND_STEPS.length}: {FUND_STEPS[at]}</span>
+    </>
+  );
+}
+
 function FundCard({ a, funding, isClient, signedIn, onFunded }: {
   a: AgreementDetail['agreement']; funding?: FundingInfo; isClient: boolean; signedIn: boolean; onFunded: () => void;
 }) {
@@ -264,7 +286,7 @@ function FundCard({ a, funding, isClient, signedIn, onFunded }: {
     }
   }
 
-  if (!signedIn) return <div className="card"><h3>Fund this job</h3><p className="muted" style={{ marginBottom: 14 }}>Connect the wallet that posted the job.</p><button className="btn btn-primary" onClick={session.openConnect}><Icon name="lock" />Connect wallet</button></div>;
+  if (!signedIn) return <div className="card"><h3>Fund this job</h3><p className="muted" style={{ marginBottom: 14 }}>Log in with the account that posted the job.</p><button className="btn btn-primary" onClick={session.openConnect}><Icon name="lock" />Log in</button></div>;
   if (!isClient) return <div className="card"><h3>Waiting for funding</h3><p className="muted">The client has to lock {fmtHbar(price)} in the contract before the agent starts.</p></div>;
 
   return (
@@ -277,6 +299,7 @@ function FundCard({ a, funding, isClient, signedIn, onFunded }: {
         <div className="meta"><span>Released to the agent only on PASS</span><span>Returned to you on FAIL or if the deadline passes</span></div>
       </div>
       <div className="card">
+        <FundSteps stage={stage} />
         {stage === 'confirming' || stage === 'indexing' ? (
           <div className="stack" style={{ gap: 10 }}>
             <div className="row" style={{ gap: 12 }}><span className="ico-run" style={{ width: 24, height: 24 }} /><b>{stage === 'confirming' ? 'Waiting for Hedera to confirm…' : 'Confirmed. Updating the job…'}</b></div>

@@ -10,11 +10,16 @@ import type { Me } from '@/lib/types';
 import { useSession } from '@/providers/Session';
 import { useToast } from '@/providers/Toasts';
 import Notice, { Empty } from '@/components/Notice';
+import Field, { PasswordInput } from '@/components/Field';
 import { Icon } from '@/components/Icon';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const strong = (p: string) => p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p);
+const PW_RULE = 'Use at least 8 characters, with a letter and a number.';
 const ROLES: [Me['role'] & string, string][] = [['both', 'Hire and list agents'], ['client', 'Hire agents'], ['lister', 'List agents']];
+
+/** Move keyboard focus to the first field that failed. */
+const focusFirst = (ids: (string | false | undefined)[]) => document.getElementById(ids.find(Boolean) as string)?.focus();
 
 export default function AccountPage() {
   const session = useSession();
@@ -35,7 +40,8 @@ export default function AccountPage() {
     <div className="page">
       <div className="container" style={{ maxWidth: 820 }}>
         <div className="page-head"><div><p className="eyebrow-p">Account</p><h1>{u?.displayName ?? 'Your account'}</h1><p>{u?.email ?? 'No email yet'} · {shortAddr(session.address)}</p></div>
-          <div className="row" style={{ gap: 10 }}><Link className="btn btn-outline" href="/dashboard?tab=agents">My agents</Link><Link className="btn btn-outline" href="/dashboard?tab=agent-jobs">Jobs on my agents</Link></div></div>
+          <div className="row wrap" style={{ gap: 10 }}><Link className="btn btn-outline" href="/dashboard?tab=agents">My agents</Link><Link className="btn btn-outline" href="/dashboard?tab=agent-jobs">Jobs on my agents</Link></div></div>
+        {me.error && <Notice kind="bad" style={{ marginBottom: 20 }}>Could not load your account. {(me.error as Error).message} <button className="link" onClick={() => me.refetch()}>Try again</button></Notice>}
         {me.isLoading || !u ? <div className="skel" style={{ height: 320 }} /> : (
           <div className="stack">
             {!u.hasPassword && <Notice kind="warn"><b>Your account is protected by your wallet only.</b> Add an email and password below to require both at login.</Notice>}
@@ -61,9 +67,11 @@ function Profile({ u, onSaved }: { u: Me; onSaved: () => void }) {
   const [name, setName] = useState(u.displayName ?? '');
   const [role, setRole] = useState<Me['role']>(u.role ?? 'both');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string>();
   useEffect(() => { setName(u.displayName ?? ''); setRole(u.role ?? 'both'); }, [u.displayName, u.role]);
   async function save() {
-    if (!name.trim()) return toast('Enter a display name', '', 'bad');
+    if (!name.trim()) { setErr('Enter a display name.'); focusFirst(['acc-name']); return; }
+    setErr(undefined);
     setBusy(true);
     try { await api('/me', { method: 'PATCH', auth: true, body: { displayName: name.trim(), role } }); onSaved(); toast('Profile saved', ''); }
     catch (e) { toast('Could not save', apiErrorText(e), 'bad'); }
@@ -72,8 +80,8 @@ function Profile({ u, onSaved }: { u: Me; onSaved: () => void }) {
   return (
     <div className="card"><h3>Profile</h3><div className="form-grid">
       <div className="form-grid two">
-        <div className="field"><label htmlFor="dn">Display name</label><input id="dn" className="input" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} /></div>
-        <div className="field"><label htmlFor="rl">What you do here</label><select id="rl" className="select" value={role ?? 'both'} onChange={(e) => setRole(e.target.value as Me['role'])}>{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+        <Field label="Display name" error={err}><input id="acc-name" className="input" maxLength={60} autoComplete="nickname" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="What you do here"><select className="select" value={role ?? 'both'} onChange={(e) => setRole(e.target.value as Me['role'])}>{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
       </div>
       <div><button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button></div>
     </div></div>
@@ -88,13 +96,15 @@ function AddPassword({ onDone }: { onDone: () => void }) {
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string>();
+  const [errs, setErrs] = useState<Partial<Record<'email' | 'pw' | 'pw2' | 'form', string>>>({});
 
   async function submit() {
-    setErr(undefined);
-    if (!EMAIL_RE.test(email.trim())) return setErr('Enter a valid email address.');
-    if (!strong(pw)) return setErr('Password: at least 8 characters with a letter and a number.');
-    if (pw !== pw2) return setErr('The two passwords do not match.');
+    const e: typeof errs = {};
+    if (!EMAIL_RE.test(email.trim())) e.email = 'Enter a valid email address, like name@example.com.';
+    if (!strong(pw)) e.pw = PW_RULE;
+    if (pw !== pw2) e.pw2 = 'The two passwords do not match.';
+    setErrs(e);
+    if (e.email || e.pw || e.pw2) { focusFirst([e.email && 'acc-email', e.pw && 'acc-pw', e.pw2 && 'acc-pw2']); return; }
     setBusy(true);
     try {
       // Proving the wallet again with a fresh signature is what authorises adding the password.
@@ -103,17 +113,17 @@ function AddPassword({ onDone }: { onDone: () => void }) {
       await api('/auth/signup', { body: { address: session.address, nonce, signature, email: email.trim(), password: pw } });
       toast('Email and password added', 'Next logins need your wallet and this password.');
       setPw(''); setPw2(''); onDone();
-    } catch (e) { setErr(apiErrorText(e) === 'Something went wrong.' ? errMessage(e) : apiErrorText(e)); }
+    } catch (er) { setErrs({ form: apiErrorText(er) === 'Something went wrong.' ? errMessage(er) : apiErrorText(er) }); }
     setBusy(false);
   }
   return (
     <div className="card"><h3>Add email and password</h3><div className="form-grid">
-      <div className="field"><label htmlFor="em">Email</label><input id="em" className="input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+      <Field label="Email" error={errs.email}><input id="acc-email" className="input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
       <div className="form-grid two">
-        <div className="field"><label htmlFor="p1">Password</label><input id="p1" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></div>
-        <div className="field"><label htmlFor="p2">Confirm password</label><input id="p2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>
+        <Field label="Password" hint="At least 8 characters, with a letter and a number." error={errs.pw}><PasswordInput id="acc-pw" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+        <Field label="Confirm password" error={errs.pw2}><PasswordInput id="acc-pw2" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
       </div>
-      {err && <span className="err">{err}</span>}
+      {errs.form && <div className="form-summary" role="alert">{errs.form}</div>}
       <div className="row wrap" style={{ gap: 12 }}>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy || !session.walletReady}>{busy ? 'Confirm in your wallet…' : 'Add email and password'}</button>
         {!session.walletReady && <span className="hint">Connect the wallet you signed in with first.</span>}
@@ -128,29 +138,31 @@ function ChangePassword() {
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string>();
+  const [errs, setErrs] = useState<Partial<Record<'cur' | 'pw' | 'pw2' | 'form', string>>>({});
 
   async function submit() {
-    setErr(undefined);
-    if (!cur) return setErr('Enter your current password.');
-    if (!strong(pw)) return setErr('New password: at least 8 characters with a letter and a number.');
-    if (pw !== pw2) return setErr('The two new passwords do not match.');
+    const e: typeof errs = {};
+    if (!cur) e.cur = 'Enter your current password.';
+    if (!strong(pw)) e.pw = PW_RULE;
+    if (pw !== pw2) e.pw2 = 'The two new passwords do not match.';
+    setErrs(e);
+    if (e.cur || e.pw || e.pw2) { focusFirst([e.cur && 'acc-cur', e.pw && 'acc-npw', e.pw2 && 'acc-npw2']); return; }
     setBusy(true);
     try {
       await api('/me/password', { auth: true, body: { currentPassword: cur, newPassword: pw } });
       toast('Password changed', 'Your other devices were signed out.');
       setCur(''); setPw(''); setPw2('');
-    } catch (e) { setErr(apiErrorText(e)); }
+    } catch (er) { setErrs({ form: apiErrorText(er) }); }
     setBusy(false);
   }
   return (
     <div className="card"><h3>Password</h3><div className="form-grid">
-      <div className="field"><label htmlFor="cp">Current password</label><input id="cp" className="input" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} /></div>
+      <Field label="Current password" error={errs.cur}><PasswordInput id="acc-cur" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} /></Field>
       <div className="form-grid two">
-        <div className="field"><label htmlFor="np">New password</label><input id="np" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></div>
-        <div className="field"><label htmlFor="np2">Confirm new password</label><input id="np2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>
+        <Field label="New password" hint="At least 8 characters, with a letter and a number." error={errs.pw}><PasswordInput id="acc-npw" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+        <Field label="Confirm new password" error={errs.pw2}><PasswordInput id="acc-npw2" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
       </div>
-      {err && <span className="err">{err}</span>}
+      {errs.form && <div className="form-summary" role="alert">{errs.form}</div>}
       <div><button className="btn btn-outline btn-sm" onClick={submit} disabled={busy}>{busy ? 'Saving…' : 'Change password'}</button></div>
     </div></div>
   );

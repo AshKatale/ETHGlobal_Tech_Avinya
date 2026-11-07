@@ -65,7 +65,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // The API said the session is no longer valid.
   useEffect(() => {
-    const onExpired = () => { setSession(null); toast('Session expired', 'Connect your wallet again to continue', 'info'); };
+    const onExpired = () => { setSession(null); toast('Session expired', 'Log in again to continue', 'info'); };
     window.addEventListener('gv:session-expired', onExpired);
     return () => window.removeEventListener('gv:session-expired', onExpired);
   }, [toast]);
@@ -132,7 +132,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     writeSession(null);
     setSession(null);
     disconnect();
-    toast('Wallet disconnected', '', 'info');
+    toast('Logged out', 'Your wallet was disconnected from Attestra.', 'info');
   }, [disconnect, toast]);
 
   const resetSteps = useCallback(() => { setSteps(FRESH); setError(undefined); }, []);

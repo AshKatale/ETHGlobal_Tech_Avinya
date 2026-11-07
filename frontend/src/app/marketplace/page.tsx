@@ -55,7 +55,7 @@ export default function MarketplacePage() {
           <Link className="btn btn-primary" href="/post-job">Post a job</Link>
         </div>
 
-        <div className="tiles" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 30 }}>
+        <div className="tiles tiles-3" style={{ marginBottom: 30 }}>
           <div className="tile"><span>Listed agents</span><b className="p">{isLoading ? '…' : agents.length}</b></div>
           <div className="tile"><span>Jobs completed</span><b>{isLoading ? '…' : agents.reduce((t, a) => t + (a.jobsCompleted ?? 0), 0)}</b></div>
           <div className="tile"><span>Average benchmark</span><b>{avg === null ? '—' : `${avg} / 100`}</b></div>
@@ -66,22 +66,22 @@ export default function MarketplacePage() {
             <label style={{ position: 'relative', flex: 1, minWidth: 240 }}>
               <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, color: 'var(--muted-60)' }}><Icon name="search" /></span>
               <span className="sr">Search agents</span>
-              <input className="input" style={{ paddingLeft: 40 }} placeholder="Search by name or what it does" value={q} onChange={(e) => setQ(e.target.value)} />
+              <input name="q" className="input" style={{ paddingLeft: 40 }} placeholder="Search by name or what it does" value={q} onChange={(e) => setQ(e.target.value)} />
             </label>
             <label><span className="sr">Minimum score</span>
-              <select className="select" style={{ width: 'auto', minWidth: 160 }} value={min} onChange={(e) => setMin(+e.target.value)}>
+              <select name="min-score" className="select" style={{ width: 'auto', minWidth: 160 }} value={min} onChange={(e) => setMin(+e.target.value)}>
                 <option value={0}>Any score</option><option value={80}>Score 80+</option><option value={85}>Score 85+</option><option value={90}>Score 90+</option>
               </select></label>
             <label><span className="sr">Sort</span>
-              <select className="select" style={{ width: 'auto', minWidth: 170 }} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+              <select name="sort" className="select" style={{ width: 'auto', minWidth: 170 }} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
                 <option value="score">Highest score</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option><option value="jobs">Most jobs done</option>
               </select></label>
           </div>
           <div className="row wrap" style={{ gap: 8 }}>
-            <button className={`chip ${!tags.size ? 'on' : ''}`} onClick={() => setTags(new Set())}>All</button>
-            {allTags.map((t) => <button key={t} className={`chip ${tags.has(t) ? 'on' : ''}`} onClick={() => toggle(t)}>{prettyTag(t)}</button>)}
+            <button className={`chip ${!tags.size ? 'on' : ''}`} aria-pressed={!tags.size} onClick={() => setTags(new Set())}>All</button>
+            {allTags.map((t) => <button key={t} className={`chip ${tags.has(t) ? 'on' : ''}`} aria-pressed={tags.has(t)} onClick={() => toggle(t)}>{prettyTag(t)}</button>)}
           </div>
-          <div className="muted" style={{ fontSize: 14 }}>{isLoading ? 'Loading agents…' : `${list.length} agent${list.length === 1 ? '' : 's'}`}</div>
+          <div className="muted" style={{ fontSize: 14 }} role="status" aria-live="polite">{isLoading ? 'Loading agents…' : `${list.length} agent${list.length === 1 ? '' : 's'}`}</div>
         </div>
 
         {error ? (

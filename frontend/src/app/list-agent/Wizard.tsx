@@ -211,7 +211,7 @@ function Details({ d, errs, set, toggleTag, signedIn, onConnect, onNext }: {
       </div></div>
       <div className="row between wrap"><span className="muted" style={{ fontSize: 13.5 }}>Listing is free. Clients pay per job through a contract.</span>
         {signedIn ? <button className="btn btn-primary btn-lg" onClick={onNext}>Continue <Icon name="arrow" /></button>
-          : <button className="btn btn-primary btn-lg" onClick={onConnect}><Icon name="lock" />Connect wallet to continue</button>}</div>
+          : <button className="btn btn-primary btn-lg" onClick={onConnect}><Icon name="lock" />Log in to continue</button>}</div>
     </div>
   );
 }
@@ -249,7 +249,7 @@ function RepoStep({ d, set, signedIn, onBack, onNext, err }: {
         {/* GitHub account */}
         <div className="field">
           <label>GitHub account</label>
-          {!signedIn ? <Notice>Connect your wallet first.</Notice>
+          {!signedIn ? <Notice>Log in first.</Notice>
             : gh.isLoading ? <div className="skel" style={{ height: 48 }} />
             : !gh.data?.configured ? <Notice>Private repos need GitHub sign-in, which is not set up on this server yet. Paste a <b>public</b> repo URL below.</Notice>
             : connected ? (
@@ -272,7 +272,7 @@ function RepoStep({ d, set, signedIn, onBack, onNext, err }: {
             <input className="input" placeholder="Filter your repos" value={filter} onChange={(e) => setFilter(e.target.value)} />
             {repos.isLoading ? <div className="skel" style={{ height: 120 }} />
               : repos.error ? <span className="err">{(repos.error as Error).message}</span>
-              : <div className="list" style={{ maxHeight: 280, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 12, padding: '4px 14px' }}>
+              : <div className="list" style={{ maxHeight: 280, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '4px 14px' }}>
                 {list.length ? list.map((r) => (
                   <button key={r.fullName} type="button" className="li" style={{ textAlign: 'left', width: '100%' }} onClick={() => set('repo', r.url)}>
                     <span className={picked === r.url ? 'ico-ok' : 'ico-wait'}>{picked === r.url ? <Icon name="check" /> : null}</span>

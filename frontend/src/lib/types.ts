@@ -1,4 +1,4 @@
-// Shapes returned by the Gigiverse API (backend/src/routes). Money is always a tinybar decimal string.
+// Shapes returned by the Attestra API (backend/src/routes). Money is always a tinybar decimal string.
 
 export type AgentStatus = 'draft' | 'benchmarking' | 'listed' | 'failed';
 

@@ -39,7 +39,7 @@ export default function Dashboard() {
   if (!on) {
     return (
       <div className="page"><div className="container" style={{ maxWidth: 720 }}>
-        <Empty title="Connect your wallet to see your dashboard">Your jobs, your agents and your HBAR activity are tied to your wallet.<br /><button className="btn btn-primary" onClick={session.openConnect}><Icon name="lock" />Connect wallet</button></Empty>
+        <Empty title="Log in to see your dashboard">Your jobs, your agents and your HBAR activity belong to your account.<br /><button className="btn btn-primary" onClick={session.openConnect}><Icon name="lock" />Log in or sign up</button></Empty>
       </div></div>
     );
   }
@@ -48,7 +48,7 @@ export default function Dashboard() {
   return (
     <div className="page">
       <div className="container">
-        <div className="page-head"><div><p className="eyebrow-p">Dashboard</p><h1>Your Gigiverse</h1><p>{shortAddr(session.address)} · Hedera testnet</p></div>
+        <div className="page-head"><div><p className="eyebrow-p">Dashboard</p><h1>Your Attestra</h1><p>{shortAddr(session.address)} · Hedera testnet</p></div>
           <div className="row" style={{ gap: 10 }}><Link className="btn btn-outline" href="/post-job">Post a job</Link><Link className="btn btn-primary" href="/list-agent">List an agent</Link></div></div>
 
         <div className="tiles" style={{ marginBottom: 28 }}>
@@ -60,7 +60,7 @@ export default function Dashboard() {
         {me.data && !me.data.hasPassword && <Notice kind="warn" style={{ marginBottom: 20 }}>Your account is protected by your wallet only. <Link className="link" href="/account">Add an email and password</Link> to require both at login.</Notice>}
         {summary.error && <Notice kind="warn" style={{ marginBottom: 20 }}>Could not load your totals. {(summary.error as Error).message}</Notice>}
 
-        <div className="tabs">{TABS.map((t) => <Link key={t.key} href={`/dashboard?tab=${t.key}`} className={`tab ${tab === t.key ? 'on' : ''}`}>{t.label}</Link>)}</div>
+        <nav className="tabs" aria-label="Dashboard sections">{TABS.map((t) => <Link key={t.key} href={`/dashboard?tab=${t.key}`} className={`tab ${tab === t.key ? 'on' : ''}`} aria-current={tab === t.key ? 'page' : undefined}>{t.label}</Link>)}</nav>
 
         {tab === 'jobs' && <JobList q={jobs} empty="You have not hired anyone yet." cta={<Link className="btn btn-primary btn-sm" href="/post-job">Post a job</Link>} />}
         {tab === 'agent-jobs' && <JobList q={agentJobs} showClient empty="Nobody has hired your agents yet." cta={<Link className="btn btn-outline btn-sm" href="/marketplace">View the marketplace</Link>} />}
@@ -94,16 +94,24 @@ export default function Dashboard() {
   );
 }
 
+/** A job the client has accepted but not funded yet. Only meaningful on the client's own list. */
+const needsAction = (j: JobRow, agentView?: boolean) => !agentView && j.status === 'agreed';
+
 function JobList({ q, empty, cta, showClient }: { q: { isLoading: boolean; error: unknown; data?: JobRow[] }; empty: string; cta: React.ReactNode; showClient?: boolean }) {
   if (q.isLoading) return <div className="skel" style={{ height: 200 }} />;
   if (q.error) return <Notice kind="bad">{(q.error as Error).message}</Notice>;
   if (!q.data?.length) return <Empty title={empty}>{cta}</Empty>;
+  // Jobs that wait on the client (not yet funded) come first, then newest.
+  const rows = [...q.data].sort((x, y) => Number(needsAction(y, showClient)) - Number(needsAction(x, showClient)) || +new Date(y.createdAt) - +new Date(x.createdAt));
   return (
-    <div className="card"><div className="list">{q.data.map((j) => (
+    <div className="card"><div className="list">{rows.map((j) => (
       <Link key={j.id} className="li" href={`/jobs/${j.id}`}>
         <span className="mono muted">{j.id.slice(0, 6)}</span>
         <div>{j.title}<span className="sub">{j.agentName}{showClient && j.clientAddress ? ` · client ${shortAddr(j.clientAddress)}` : ''} · {fmtHbar(j.priceTinybar)} · {ago(j.createdAt)}</span></div>
-        <StatusChip status={j.status} />
+        <span className="row" style={{ gap: 8 }}>
+          {needsAction(j, showClient) && <span className="status s-warn">Needs funding</span>}
+          <StatusChip status={j.status} />
+        </span>
       </Link>))}</div></div>
   );
 }

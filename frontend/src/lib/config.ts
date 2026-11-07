@@ -6,4 +6,4 @@ export const HEDERA_RPC = process.env.NEXT_PUBLIC_HEDERA_RPC ?? 'https://testnet
 export const CHAIN_ID = 296;
 export const HASHSCAN = 'https://hashscan.io/testnet';
 export const FAUCET_URL = 'https://portal.hedera.com/faucet';
-export const BRAND = 'Gigiverse';
+export const BRAND = 'Attestra';

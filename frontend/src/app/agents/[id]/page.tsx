@@ -87,7 +87,7 @@ export default function AgentPage() {
             )}
 
             <div className="card">
-              <h3>Recent jobs on Gigiverse</h3>
+              <h3>Recent jobs on Attestra</h3>
               {recentJobs.length ? (
                 <div className="list">{recentJobs.map((j) => (
                   <Link key={j.id} className="li" href={`/jobs/${j.id}`}>

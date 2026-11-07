@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useBalance } from 'wagmi';
@@ -45,7 +45,7 @@ function WalletMenu({ onClose }: { onClose: () => void }) {
       <div className="gvm-acts">
         <Link className="gvm-btn" href="/dashboard" onClick={onClose}>Dashboard</Link>
         <Link className="gvm-btn" href="/account" onClick={onClose}>Account</Link>
-        <button className="gvm-btn" onClick={() => { onClose(); signOut(); }}>Disconnect</button>
+        <button className="gvm-btn" onClick={() => { onClose(); signOut(); }}>Log out</button>
       </div>
       <a className="gvm-btn" style={{ width: '100%', marginTop: 10 }} href={FAUCET_URL} target="_blank" rel="noopener noreferrer">Get test HBAR (Hedera faucet)</a>
     </Modal>
@@ -58,26 +58,40 @@ export default function Header() {
   const [menu, setMenu] = useState(false);
   const [mobile, setMobile] = useState(false);
   const active = (href: string) => path === href || path.startsWith(href + '/');
+  useEffect(() => { setMobile(false); }, [path]);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 8);
+    on();
+    window.addEventListener('scroll', on, { passive: true });
+    return () => window.removeEventListener('scroll', on);
+  }, []);
+  useEffect(() => {
+    if (!mobile) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobile(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [mobile]);
   return (
-    <header className="gv-header">
+    <header className={`gv-header${scrolled ? ' scrolled' : ''}`}>
       <div className="container gv-nav">
-        <Link className="gv-logo" href="/" aria-label="Gigiverse home">
+        <Link className="gv-logo" href="/" aria-label="Attestra home">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/gigiverse-logo.png" alt="Gigiverse" width={157} height={32} />
+          <img src="/Logo.jpeg" alt="Attestra" width={96} height={32} />
         </Link>
         <nav className="gv-links" aria-label="App">
-          {NAV.map((n) => <Link key={n.href} href={n.href} className={active(n.href) ? 'active' : ''}>{n.label}</Link>)}
+          {NAV.map((n) => <Link key={n.href} href={n.href} className={active(n.href) ? 'active' : ''} aria-current={active(n.href) ? 'page' : undefined}>{n.label}</Link>)}
         </nav>
         <div className="gv-right">
           <span className="net-pill"><i />Hedera testnet</span>
           {s.ready && s.signedIn
             ? <WalletChip onOpen={() => setMenu(true)} />
-            : <button className="btn btn-primary btn-sm" onClick={s.openConnect}><Icon name="lock" />Connect wallet</button>}
-          <button className="burger" aria-label="Menu" onClick={() => setMobile((v) => !v)}><span /><span /><span /></button>
+            : <button className="btn btn-primary btn-sm" onClick={s.openConnect}><Icon name="lock" /><span>Log in<span className="hide-sm"> / Sign up</span></span></button>}
+          <button className="burger" aria-label="Menu" aria-expanded={mobile} aria-controls="mobile-nav" onClick={() => setMobile((v) => !v)}><span /><span /><span /></button>
         </div>
       </div>
-      <nav className={`mnav ${mobile ? 'open' : ''}`}>
-        {NAV.map((n) => <Link key={n.href} href={n.href} className={active(n.href) ? 'active' : ''} onClick={() => setMobile(false)}>{n.label}</Link>)}
+      <nav id="mobile-nav" className={`mnav ${mobile ? 'open' : ''}`} aria-label="Mobile">
+        {[...NAV, ...(s.signedIn ? [{ href: '/account', label: 'Account' }] : [])].map((n) => <Link key={n.href} href={n.href} className={active(n.href) ? 'active' : ''} aria-current={active(n.href) ? 'page' : undefined} onClick={() => setMobile(false)}>{n.label}</Link>)}
       </nav>
       {s.signedIn && s.wrongNetwork && (
         <div className="container" style={{ paddingTop: 10, paddingBottom: 10 }}>

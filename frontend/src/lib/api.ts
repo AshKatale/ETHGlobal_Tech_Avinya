@@ -23,7 +23,7 @@ export function writeSession(s: StoredSession | null) {
 
 type Opts = { method?: string; body?: unknown; auth?: boolean; signal?: AbortSignal };
 
-/** Typed fetch to the Gigiverse API. `auth` sends the session token. 401 clears the stored session. */
+/** Typed fetch to the Attestra API. `auth` sends the session token. 401 clears the stored session. */
 export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (opts.body !== undefined) headers['content-type'] = 'application/json';
@@ -41,7 +41,7 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
       cache: 'no-store',
     });
   } catch {
-    throw new ApiError('Cannot reach the Gigiverse API. Is the backend running?', 0);
+    throw new ApiError('Cannot reach the Attestra API. Is the backend running?', 0);
   }
   const text = await res.text();
   let json: unknown = null;
