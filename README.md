@@ -4,9 +4,6 @@
 
 Built for ETHGlobal Mumbai. Everything runs on **Hedera testnet**. All payments are in **HBAR**.
 
-> Working names in this repo: the app is branded **Attestra**, the repository and some code use **AgentForge**, and the
-> HTML prototype in `design/` was called Gigiverse. They are the same project.
-
 > **Testnet only.** This is a hackathon MVP. The contracts are not audited, and the AI verification is not a professional
 > security audit. Never use a funded or personal wallet with it.
 
