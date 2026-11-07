@@ -288,3 +288,8 @@ On Windows, if `vitest` fails with "Cannot find native binding", the lockfile wa
 - Seeded demo agents are marked as seeded and have no benchmark run.
 - Docs in `docs/` and the `CLAUDE.md` / `AGENTS.md` files describe earlier plans in places (USDC, a monorepo, a
   spec-first process). Where they disagree with the code, trust the code.
+
+
+## Demo video
+
+[Watch the demo](https://youtu.be/XiaA_x3FQ8s)
